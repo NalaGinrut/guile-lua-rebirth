@@ -113,7 +113,7 @@
     (cond
      ((eqv? #\. (peek-port)) ; not an integer
       (read-char port)
-      (string->number (string-append num "." (read-word port))))
+      (string->number (string-append num "." (read-delimited "e " port))))
      (else (string->number num))))) ; return integer
 
 (define (get-exponent-number port sign)
