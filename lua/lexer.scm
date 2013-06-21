@@ -65,6 +65,7 @@
 (define *punctuations*
   '((";" . semi-colon)
     ("," . comma)
+    (":" . colon)
     ("." . dot)
     ("{" . lbrace)
     ("}" . rbrace)
