@@ -25,142 +25,154 @@
 (define (make-parser)
   (lalr-parser
    ;; according to operations precedence
-   or 
-   and 
-   less-than larger-than less-eq larger-eq neq eq
-   concat
-   add minus
-   multi div mod
-   not hash
-   expt
+   (left: or) 
+   (left: and) 
+   (left: less-than larger-than less-eq larger-eq neq eq)
+   (right: concat)
+   (left: add minus)
+   (left: multi div mod)
+   (right: not hash)
+   (right: expt)
 
    ;; punctuations
    semi-colon comma dot lbrace rbrace lparen rparen lbracket rbracket
+   colon
 
    ;; reserved word
    return function end if then elseif else true false nil or and
    do while repeat until local for break in not
 
-   )
+   ;; misc
+   id sp-id)
 
-;; Lua BNF  
-;; chunk      ::= block .
+  (program: (block) : $1
+            (*eoi*) : *eof-object*)
+  
+  (terminator (semi-colon) : $1
+              () : '(begin))
 
-;; semi       ::= ';' .
-;; semi       ::= .
+  (block (scope stmt-list) : $x
+         (scope stmt-list last-stmt terminator) : $x)
 
-;; block      ::= scope statlist .
-;; block      ::= scope statlist laststat semi .
-;; ublock     ::= block 'until' exp .
+  (ublock (block until exp) : $x)
 
-;; scope      ::= .
-;; scope      ::= scope statlist binding semi.
-           
-;; statlist   ::= .
-;; statlist   ::= statlist stat semi .
+  (scope () : '(begin)
+         (scope stmt-list binding terminator) : $x)
 
-;; stat       ::= 'do' block 'end' .
-;; stat       ::= 'while' exp 'do' block 'end' .
-;; stat       ::= repetition 'do' block 'end' .
-;; stat       ::= 'repeat' ublock .
-;; stat       ::= 'if' conds 'end' .
-;; stat       ::= 'function' funcname funcbody .
-;; stat       ::= setlist '=' explist1 .
-;; stat       ::= functioncall .
+  (stmt-list () : '(begin)
+             (scope stmt-list stmt terminator) :  $x)
+    
+  (stmt (do block end) : $x
+        (while exp do block end) : $x
+        (repetition do block end) : $x
+        (repeat ublock) : $x
+        (if conds end) : $x
+        (function funcname funcbody) : $x
+        (set-list eq exp-list1) : $x)
 
-;; repetition ::= 'for' NAME '=' explist23 .
-;; repetition ::= 'for' namelist 'in' explist1 .
-           
-;; conds      ::= condlist .
-;; conds      ::= condlist 'else' block .
-;; condlist   ::= cond .
-;; condlist   ::= condlist 'elseif' cond .
-;; cond       ::= exp 'then' block .
-           
-;; laststat   ::= 'break' .
-;; laststat   ::= 'return' .
-;; laststat   ::= 'return' explist1 .
+  (repetition (for name eq exp-list23) : $x
+              (for name-list in exp-list) : $x)
 
-;; binding    ::= 'local' namelist .
-;; binding    ::= 'local' namelist '=' explist1 .
-;; binding    ::= 'local' 'function' NAME funcbody .
+  (conds (cond-list) : $x
+         (cond-list else block) : $x)
+  
+  (cond-list (cond) : $x
+             (cond-list elseif cond) : $x)
 
-;; funcname   ::= dottedname .
-;; funcname   ::= dottedname ':' NAME .
+  (cond (exp then block) : $x)
 
-;; dottedname ::= NAME .
-;; dottedname ::= dottedname '.' NAME .
+  (last-stmt (break) : $x
+             (return) : $x
+             (return exp-list1) : $x)
 
-;; namelist   ::= NAME .
-;; namelist   ::= namelist ',' NAME .
+  (binding (local name-list) : $x
+           (local name-list eq exp-list1) : $x
+           (local function name funcbody) : $x)
 
-;; explist1   ::= exp .
-;; explist1   ::= explist1 ',' exp .
-;; explist23  ::= exp ',' exp .
-;; explist23  ::= exp ',' exp ',' exp .
+  (func-name (dotted-name) : $1
+             (dotted-name colon name) : $x)
 
-;; %left      'or' .
-;; %left      'and' .
-;; %left      '<' '<=' '>' '>=' '==' '~=' .
-;; %right     '..' .
-;; %left      '+' '-' .
-;; %left      '*' '/' '%' .
-;; %right     'not' '#' .
-;; %right     '^' .
+  (dotted-name (name) : $1
+               (dotted-name dot name) : $x)
 
-;; exp        ::= 'nil'|'true'|'false'|NUMBER|STRING|'...' .
-;; exp        ::= function .
-;; exp        ::= prefixexp .
-;; exp        ::= tableconstructor .
-;; exp        ::= 'not'|'#'|'-' exp .         ['not']
-;; exp        ::= exp 'or' exp .
-;; exp        ::= exp 'and' exp .
-;; exp        ::= exp '<'|'<='|'>'|'>='|'=='|'~=' exp .
-;; exp        ::= exp '..' exp .
-;; exp        ::= exp '+'|'-' exp .
-;; exp        ::= exp '*'|'/'|'%' exp .
-;; exp        ::= exp '^' exp .
-           
-;; setlist    ::= var .
-;; setlist    ::= setlist ',' var .
+  (name-list (name) : $1
+             (name-list dot name) : $x)
+  
+  (exp-list1 (exp) : $1
+             (exp-list1 comma exp) : $x)
 
-;; var        ::= NAME .
-;; var        ::= prefixexp '[' exp ']' .
-;; var        ::= prefixexp '.' NAME .
+  (exp-list23 (exp comma exp) : $x
+              (exp comma exp comma exp) : $x)
 
-;; prefixexp  ::= var .
-;; prefixexp  ::= functioncall .
-;; prefixexp  ::= OPEN exp ')' .
+  (exp (nil) : $1
+       (true) : $1
+       (false) : $1
+       (number) : $1
+       (string) : $1
+       (tri-dots) : $1 ; how to deal with var-list?
+       (func) : $1
+       (prefix-exp) : $1
+       (table-constructor) : $1
+       (not) : $1
+       (hash) : $1
+       (minus) : $1
+       (exp or exp) : $x
+       (exp and exp) : $x
+       (exp arith-compare exp) : $x
+       (exp concat exp) : $x
+       (exp arith-op exp) : $x)
 
-;; functioncall ::= prefixexp args .
-;; functioncall ::= prefixexp ':' NAME args .
+  (arith-compare (less-than) : $1
+                 (less-eq) : $1
+                 (larger-than) : $1
+                 (larger-eq) : $1
+                 (eq) : $1
+                 (neq) : $1)
 
-;; args        ::= '(' ')' .
-;; args        ::= '(' explist1 ')' .
-;; args        ::= tableconstructor .
-;; args        ::= STRING .
+  (arith-op (add) : $1
+            (minus) : $1
+            (multi) : $1
+            (div) : $1
+            (mod) : $1
+            (expt) : $1)
 
-;; function    ::= 'function' funcbody .
+  (tri-dots (dot dot dot) : args)
 
-;; funcbody    ::= params block 'end' .
+  (set-list (var) : $1
+            (set-list comma var) : $x)
 
-;; params      ::= '(' parlist ')' .
+  (var (name) : $1
+       (prefix-exp lbracket exp rbracket) : $x
+       (prefix-exp dot name) : $x)
 
-;; parlist     ::= .
-;; parlist     ::= namelist .
-;; parlist     ::= '...' .
-;; parlist     ::= namelist ',' '...' .
+  (function-call (prefix-exp args) : $x
+                 (prefix-exp colon name args) : $x)
 
-;; tableconstructor ::= '{' '}' .
-;; tableconstructor ::= '{' fieldlist '}' .
-;; tableconstructor ::= '{' fieldlist ','|';' '}' .
+  (args (lparen rparen) : $x
+        (lparen exp-list1 rparen) : $x
+        (table-constructor) : $1
+        (string) : $1)
 
-;; fieldlist   ::= field .
-;; fieldlist   ::= fieldlist ','|';' field .
-            
-;; field       ::= exp .
-;; field       ::= NAME '=' exp .
-;; field       ::= '[' exp ']' '=' exp .
+  (func (function funcbody) : $x)
 
-              
-)
+  (funcbody (params block end) : $x)
+  
+  (params (lparen par-list rparen) : $x)
+
+  (par-list () : $x
+            (name-list) : $x
+            (tri-dots) : $x
+            (name-list comma tri-dots) : $x)
+
+  (table-constructor (lbrace rbrace) : $x
+                     (lbrace field-list rbrace) : $x
+                     (lbrace field-list comma rbrace) : $x
+                     (lbrace field-list semi-colon rbrace) : $x)
+
+  (field-list (field) : $1
+              (field-list comma field) : $x
+              (field-list semi-colon field) : $x)
+
+  (field (exp) : $x
+         (name eq exp) : $x
+         (lbracket exp rbracket eq exp) : $x)) 
