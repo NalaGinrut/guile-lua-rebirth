@@ -59,14 +59,14 @@
     ("not" . not)))
 
 (define *misc-op*
-  '((".." . concat)
-    ("#"  . hash)))
+  '(("#"  . hash)))
 
+;; NOTE: dots will have speical process
+;;       so it doesn't appear in both punctuations and operations
 (define *punctuations*
   '((";" . semi-colon)
     ("," . comma)
     (":" . colon)
-    ("." . dot)
     ("{" . lbrace)
     ("}" . rbrace)
     ("(" . lparen)
@@ -240,6 +240,19 @@
      ((member c '(#\" #\'))
       (let ((str (read-lua-string port)))
         (return port 'string str))) ; it's string
+     ((eqv? c #\.) ; check if . or .. or ...
+      (read-char port)
+      (let ((d (peek-char port)))
+        (cond
+         ((eqv? d #\.)
+          (read-char port)
+          (cond
+           ((eqv? (peek-char port) #\.)
+            (read-char port)
+            (return port 'tri-dot #f)) ; tri-dot ...
+           ;; FIXME: should we consider to avoid four dots here?
+           (else (return port 'concat #f)))) ; concat ..
+         (else (return port 'dot #f))))) ; dot .
      ((is-op? c)
       (let ((op (get-op port)))
         (return port op #f))) ; it's operation
