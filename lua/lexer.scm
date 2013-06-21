@@ -113,7 +113,7 @@
     (cond
      ((eqv? #\. (peek-port)) ; not an integer
       (read-char port)
-      (string->number (string-append num "." (read-delimited "e " port))))
+      (string->number (string-append num "." (read-delimited "e " port 'peek))))
      (else (string->number num))))) ; return integer
 
 (define (get-exponent-number port sign)
@@ -139,6 +139,8 @@
                        (get-exponent-number port (read-char port))) 
                       ((is-digit? c)
                        (get-exponent-number port #\+)) ; default is positive
+                      ((is-delimiter? c)
+                       0) ; no exponent
                       (else (lex-error "Invalid exponent number!" 
                                        (port-source-location port) #f))))
                     (else #f)))) ; don't have exponent
