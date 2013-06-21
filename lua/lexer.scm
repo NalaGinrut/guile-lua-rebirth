@@ -19,7 +19,7 @@
   #:use-module (srfi srfi-39)
   #:use-module (ice-9 receive)
   #:use-module (language lua utils)
-  #:export (make-lexer))
+  #:export (make-lua-tokenizer))
 
 ;; Character predicates
 
