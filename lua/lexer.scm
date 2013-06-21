@@ -117,7 +117,13 @@
      (else (string->number num))))) ; return integer
 
 (define (get-exponent-number port sign)
-  (let ((s (case
+  (let ((e (string->number (read-word port))))
+    (if (integer? e)
+        (case sign
+          ((#\-) (- e))
+          ((#\+) e)
+          (else (error "wrong sign" sign)))
+        (lex-error "Invalid exponent" (port-source-location port) e))))
 
 ;; Lua only have float number, so we conver it to inexact
 (define (compose-number main exponent)
