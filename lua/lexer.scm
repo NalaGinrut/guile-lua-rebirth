@@ -59,7 +59,8 @@
     ("not" . not)))
 
 (define *misc-op*
-  '(("#"  . hash)))
+  '(#;(".." . concat) ; don't need it here
+    ("#"  . hash)))
 
 ;; NOTE: dots will have speical process
 ;;       so it doesn't appear in both punctuations and operations
@@ -67,6 +68,7 @@
   '((";" . semi-colon)
     ("," . comma)
     (":" . colon)
+    #;("." . dot) ; don't need it here
     ("{" . lbrace)
     ("}" . rbrace)
     ("(" . lparen)
@@ -296,7 +298,6 @@
         (if (eq? tok '*eoi*)
             (reverse! out)
             (lp (cons tok out)))))))
-
 
 (define (make-lua-tokenizer port)
  (let ((eoi? #f)
