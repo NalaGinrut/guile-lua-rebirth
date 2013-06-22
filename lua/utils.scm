@@ -15,6 +15,7 @@
 
 (define-module (language lua utils)
   #:use-module (ice-9 q)
+  #:use-module (system base language)
   #:use-module (system base lalr)
   #:use-module (system base pmatch))
 
@@ -83,3 +84,27 @@
 (define queue-head q-front)
 (define queue-tail q-rear)
 (define queue-empty? q-empty?)
+
+(define (hash-keys ht)
+  (hash-map->list (lambda (k v) k) ht))
+
+;; debug utils
+
+;; e.g: (make-compiler 'ecmascript)
+;; (put 'lambda* 'scheme-indent-function 1)
+(define* (make-compiler lang)
+  (lambda* (src #:key (to 'value))
+    (let* ((language (lookup-language lang))
+           (reader (language-reader language)))
+      (compile (call-with-input-string src reader)
+               #:from lang #:to to))))
+
+(define (make-file-compiler lang)
+  (lambda* (file #:key (to 'value))
+    (let* ((language (lookup-language lang))
+           (reader (language-reader language)))
+      (cond
+       ((file-exists? file)
+        (compile (call-with-input-file file reader)
+                 #:from lang #:to to))
+       (else (error "no such a file" file))))))
