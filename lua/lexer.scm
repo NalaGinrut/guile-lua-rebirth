@@ -48,10 +48,10 @@
 (define *relational-op*
   '(("==" . eq)
     ("~=" . neq)
-    ("<"  . less-than)
-    (">"  . larger-than)
-    ("<=" . less-eq)
-    (">=" . larger-eq)))
+    ("<"  . lt)
+    (">"  . gt)
+    ("<=" . leq)
+    (">=" . geq)))
 
 (define *logical-op*
   '(("or"  . or)
