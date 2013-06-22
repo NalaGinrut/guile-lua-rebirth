@@ -26,7 +26,7 @@
    ;; according to operations precedence
    (left: or) 
    (left: and) 
-   (left: less-than larger-than less-eq larger-eq neq eq)
+   (left: lt gt leq geq neq eq)
    (right: concat)
    (left: add minus)
    (left: multi div mod)
@@ -119,9 +119,8 @@
        (func) : $1
        (prefix-exp) : $1
        (table-constructor) : $1
-       (not) : $1
-       (hash) : $1
-       (minus) : $1
+       (not exp) : `(not ,$2)
+       (hash prefix-exp) : `(hash ,$2)
        (exp or exp) : `(or ,$1 ,$3)
        (exp and exp) : `(and ,$1 ,$3)
        (exp arith-compare exp) : `(,$2 ,$1 ,$3)
@@ -132,10 +131,10 @@
            (minus number) : `(- ,$1)
            (add number) : `(+ ,$1))
            
-  (arith-compare (less-than) : $1
-                 (less-eq) : $1
-                 (larger-than) : $1
-                 (larger-eq) : $1
+  (arith-compare (lt) : $1
+                 (leq) : $1
+                 (gt) : $1
+                 (geq) : $1
                  (eq) : $1
                  (neq) : $1)
 
