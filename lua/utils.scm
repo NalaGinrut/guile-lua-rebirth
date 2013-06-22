@@ -108,3 +108,12 @@
         (compile (call-with-input-file file reader)
                  #:from lang #:to to))
        (else (error "no such a file" file))))))
+
+(define* (make-token-checker tokenizer)
+  (lambda* (src #:optional (mode 'slim))
+    (let ((tokens (call-with-input-string src tokenizer)))
+    (case mode
+      ((slim) (map lexical-token-category tokens))
+      ((all) tokens)
+      (else (error make-token-checker "wrong mode" mode))))))
+

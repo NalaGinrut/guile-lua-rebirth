@@ -19,7 +19,7 @@
   #:use-module (srfi srfi-39)
   #:use-module (ice-9 receive)
   #:use-module (language lua utils)
-  #:export (make-lua-tokenizer))
+  #:export (make-lua-tokenizer debug-lua-tokenizer))
 
 ;; Character predicates
 
@@ -344,3 +344,6 @@
               ;; Lua doesn't need semi-colon as statment-ending
               (set! eoi? (stack-empty? stack))))
            tok)))))
+
+(define (debug-lua-tokenizer src)
+  ((make-token-checker lua-tokenizer) src))
