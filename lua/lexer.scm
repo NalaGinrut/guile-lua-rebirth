@@ -60,7 +60,8 @@
 
 (define *misc-op*
   '(#;(".." . concat) ; don't need it here
-    ("#"  . hash)))
+    ("#" . hash)
+    ("=" . assign)))
 
 ;; NOTE: dots will have speical process
 ;;       so it doesn't appear in both punctuations and operations
@@ -251,7 +252,7 @@
           (cond
            ((eqv? (peek-char port) #\.)
             (read-char port)
-            (return port 'tri-dot #f)) ; tri-dot ...
+            (return port 'tri-dots #f)) ; tri-dot ...
            ;; FIXME: should we consider to avoid four dots here?
            (else (return port 'concat #f)))) ; concat ..
          (else (return port 'dot #f))))) ; dot .
