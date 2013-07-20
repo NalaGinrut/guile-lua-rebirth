@@ -1,11 +1,11 @@
 ;;  Copyright (C) 2013
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
-;;  Ragnarok is free software: you can redistribute it and/or modify
+;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
 ;;  the Free Software Foundation, either version 3 of the License, or
 ;;  (at your option) any later version.
 
-;;  Ragnarok is distributed in the hope that it will be useful,
+;;  This file is distributed in the hope that it will be useful,
 ;;  but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;;  GNU General Public License for more details.
@@ -16,13 +16,21 @@
 (define-module (language lua utils)
   #:use-module (ice-9 q)
   #:use-module (system base language)
+  #:use-module (system base compile)
   #:use-module (system base lalr)
   #:use-module (system base pmatch))
 
 (module-export-all! (current-module))
 
 (define-syntax-rule (group-checker what c)
-  (string-contains what (string c)))
+  (and (not (eof-object? c))
+       (string-contains what (string c))))
+
+(define (location x)
+  (and (pair? x)
+       (let ((props (source-properties x)))
+         (and (not (null? props))
+              props))))
 
 (define (unget-char1 c port)
   (and (char? c) (unread-char c port)))
@@ -116,4 +124,3 @@
       ((slim) (map lexical-token-category tokens))
       ((all) tokens)
       (else (error make-token-checker "wrong mode" mode))))))
-
