@@ -16,6 +16,7 @@
 (define-module (language lua compile-tree-il)
   #:use-module (language lua utils)
   #:use-module (language lua parser)
+  #:use-module (language tree-il)
   #:export (compile-tree-il))
 
 (define empty-lexical-environment
