@@ -14,10 +14,9 @@
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 (define-module (language lua lexer)
-  #:use-module (srfi srfi-8)
-  #:use-module (srfi srfi-14)
-  #:use-module (srfi srfi-39)
+  #:use-module (ice-9 rdelim)
   #:use-module (ice-9 receive)
+  #:use-module (system base lalr)
   #:use-module (language lua utils)
   #:export (make-lua-tokenizer debug-lua-tokenizer))
 
@@ -34,8 +33,8 @@
 (define is-name-first? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
 (define (is-name? c) (or (is-name-first? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
-(define *delimiters* " \t\n()[]{}\;+-/%^~=<>")
-(define *operation-sign* "+-*/%^=~<>orandnot.#")
+(define *delimiters* " \t\n()[]{};+-/%^~=<>")
+(define *operation-sign* "+-*/%^=~<>randot.#")
 
 (define *arith-op*
   '(("+" . add)
@@ -83,19 +82,21 @@
   (assoc-ref *all-op* str))
 
 (define (is-op? c)
-  (and (not (eof-object? c))
-       (not (group-checker *operation-sign* c))))
+  (group-checker *operation-sign* c))
 
 (define (get-op port)
   (if (is-op? (peek-char port))
       #f ; not an operation
       (let lp((c (read-char port)) (op '()))
         (cond
-         ((group-checker *operations-sign* c)
+         ((group-checker *operation-sign* c)
           (lp (read-char port) (cons c op)))
          (else
           (unget-char1 c port)
           (get-op-token (apply string (reverse op))))))))
+
+(define (is-delimiter? c)
+  (group-checker *delimiters* c))
 
 (define is-whitespace?
   (lambda (c)
@@ -110,12 +111,12 @@
     do while repeat until local for break in not))
 
 (define (is-reserved-word? str)
-  (memq word *reserved-words*) (string->symbol str))
+  (memq *reserved-words* (string->symbol str)))
 
 (define (get-main-number port)
   (let ((num (read-word port)))
     (cond
-     ((eqv? #\. (peek-port)) ; not an integer
+     ((eqv? #\. (peek-char port)) ; not an integer
       (read-char port)
       (string->number (string-append num "." (read-delimited "e " port 'peek))))
      (else (string->number num))))) ; return integer
@@ -141,9 +142,9 @@
                      (cond
                       ((member (peek-char port) '(#\- #\+)) ; expt have sign
                        (get-exponent-number port (read-char port))) 
-                      ((is-digit? c)
+                      ((is-digit? (peek-char port))
                        (get-exponent-number port #\+)) ; default is positive
-                      ((is-delimiter? c)
+                      ((is-delimiter? (peek-char port))
                        0) ; no exponent
                       (else (lex-error "Invalid exponent number!" 
                                        (port-source-location port) #f))))
@@ -153,10 +154,10 @@
         main)))
 
 (define (read-lua-string port)
-  (let ((c (read-char port)) ; first #\" or #\'
-        (str (read-delimited (string c) port 'peek)))
+  (let* ((c (read-char port)) ; first #\" or #\'
+         (str (read-delimited (string c) port 'peek)))
     (if (eof-object? (read-char port))
-        (lex-error "String must be ended with \" or \'" 
+        (lex-error "String must be ended with \" or '" 
                    (port-source-location port) #f)
         str))) ; return the string
 
@@ -188,8 +189,10 @@
                (else (lp (read-delimited "]" port))))))))))
      (else ;; seems can't occur since it'd be a line-comment 
       (lex-error "No! This can't happen!" 
-                 (port-source-location port #f))))))
+                 (port-source-location port) #f)))))
    
+(define already-in-the-comment #f)
+
 (define (skip-lua-comment port)
   (let ((c (peek-char port)))
     (cond 
@@ -278,19 +281,19 @@
           (set! already-in-the-comment #f) ; end comment
           (next-token port))
          ;; FIXME: "@" or "@ ", which is the line-comment?
-         (else (read-line port))) ; '@' within comment is line-comment
-        (else
-         (unread-char c port) ; return back the char
-         ;;(unread-char #\] port) ; don't need it
-         (return (punc->symbol c) #f))))) ; return the punc as token
-     (else
-      (cond
-       ((eof-object? c) '*eoi*)
-       ((is-name-first? c)
-        (receive (cat val)
-            (read-lua-identifier port)
-          (return port cat val)))
-       (else (lex-error "Invalid token!" c)))))))
+         (else (read-line port)))) ; '@' within comment is line-comment
+       (else
+        (unread-char c port) ; return back the char
+        ;;(unread-char #\] port) ; don't need it
+        (return port (punc->symbol c) #f)))) ; return the punc as token
+    (else
+     (cond
+      ((eof-object? c) '*eoi*)
+      ((is-name-first? c)
+       (receive (cat val)
+           (read-lua-identifier port)
+         (return port cat val)))
+      (else (lex-error "Invalid token!" (port-source-location port) c)))))))
 
 (define lua-tokenizer
   (lambda (port)
