@@ -34,7 +34,7 @@
 (define (is-name? c) (or (is-name-first? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
 (define *delimiters* " \t\n()[]{};+-/%^~=<>")
-(define *operation-sign* "+-*/%^=~<>randot.#")
+(define *operation-sign* "+-*/%^=~<>randot#")
 
 (define *arith-op*
   '(("+" . add)
@@ -78,22 +78,46 @@
 
 (define *all-op* (append *arith-op* *relational-op* *logical-op* *misc-op*))
 
+(define (get-op-token lst)
+  (and (not (null? lst))  
+       (assoc-ref *all-op* (apply string lst))))
 (define (get-op-token str)
-  (assoc-ref *all-op* str))
+  (and (not (string-null? str))
+       (assoc-ref *all-op* str)))
 
-(define (is-op? c)
-  (group-checker *operation-sign* c))
+(define (is-op? c port)
+  (define (check port lst)
+    (let lp((l lst) (r '()))
+      (cond
+       ((null? l) (string->symbol (apply string lst)))
+       ((and (char? (peek-char port)) (char=? (peek-char port) (car l)))
+        (lp (cdr l) (cons (read-char port) r)))
+       (else 
+        (for-each (lambda (c) (unget-char1 c port)) (reverse r))
+        #f))))
+  (cond
+   ((group-checker *operation-sign* c)
+    (case c
+      ((#\o) (check port '(#\o #\r)))
+      ((#\a) (check port '(#\a #\n #\d)))
+      ((#\n) (check port '(#\n #\o #\t)))
+      (else #f)))
+   (else #f)))
 
 (define (get-op port)
-  (if (is-op? (peek-char port))
-      #f ; not an operation
-      (let lp((c (read-char port)) (op '()))
-        (cond
-         ((group-checker *operation-sign* c)
-          (lp (read-char port) (cons c op)))
-         (else
-          (unget-char1 c port)
-          (get-op-token (apply string (reverse op))))))))
+  (let lp((c (read-char port)) (op '()))
+    (let ((tk (get-op-token op)))
+      (cond
+       ((eof-object? c)
+        (get-op-token op))
+       ((not tk)
+        (if (group-checker *operation-sign* c)
+            (lp (read-char port) (cons c op))
+            (lex-error "invalid op" (port-source-location port)
+                       (apply string (reverse (cons c op))))))
+       (else
+        (unget-char1 c port)
+        (get-op-token op))))))
 
 (define (is-delimiter? c)
   (group-checker *delimiters* c))
@@ -111,7 +135,7 @@
     do while repeat until local for break in not))
 
 (define (is-reserved-word? str)
-  (memq *reserved-words* (string->symbol str)))
+  (memq (string->symbol str) *reserved-words*))
 
 (define (get-main-number port)
   (let ((num (read-word port)))
@@ -211,6 +235,9 @@
 (define-syntax-rule (punc->symbol c)
   (assoc-ref *punctuations* (string c)))
 
+(define-syntax-rule (is-puctuation? c)
+  (punc->symbol c))
+
 ;; As Lua specification, underscore follows an UPPERCASE char is a special-id
 (define (is-special-id? id)
   (and (> (string-length id) 1)
@@ -228,18 +255,23 @@
      ((is-special-id? id) ; special id
       (if (is-valid-id? id)
           (values 'sp-id id)
-          (lex-error "Invalid id:" (port-source-location port) id))) 
+          (lex-error "Invalid special id:" (port-source-location port) id))) 
      (else
-      (is-valid-id? id) ; normal id
-      (values 'id id)
-      (lex-error "Invalid id:" (port-source-location port) id)))))
+      (if (is-valid-id? id) ; normal id
+          (values 'id id)
+          (lex-error "Invalid id:" (port-source-location port) id))))))
 
 (define (next-token port)
   (let ((c (peek-char port)))
     (cond
+     ((eof-object? c) '*eoi*)
      ((is-whitespace? c)
       (read-char port)
       (next-token port))
+     ((is-puctuation? c)
+      => (lambda (punc)
+           (read-char port)
+           (return port punc #f)))
      ((is-digit? c) 
       (let ((num (read-lua-number port)))
         (return port 'number num))) ; it's number
@@ -259,9 +291,12 @@
            ;; FIXME: should we consider to avoid four dots here?
            (else (return port 'concat #f)))) ; concat ..
          (else (return port 'dot #f))))) ; dot .
-     ((is-op? c)
-      (let ((op (get-op port)))
-        (return port op #f))) ; it's operation
+     ((is-op? c port)
+      => (lambda (op)
+           (let ((op1 (if op op (get-op port))))
+             (if op1
+                 (return port op1 #f)
+                 (lex-error "invalid op!" (port-source-location port) #f)))))
      ((char=? c #\-)
       (read-char port) ; skip #\-
       (cond
