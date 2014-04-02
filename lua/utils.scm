@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013
+;;  Copyright (C) 2013,2014
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -18,9 +18,37 @@
   #:use-module (system base language)
   #:use-module (system base compile)
   #:use-module (system base lalr)
-  #:use-module (system base pmatch))
-
-(module-export-all! (current-module))
+  #:use-module (system base pmatch)
+  #:export (group-checker
+	    location
+	    unget-char1
+	    syntax-error
+	    lex-error
+	    *eof-object*
+	    make-reader
+	    port-source-location
+	    return
+	    ->
+	    pmatch/source
+	    
+	    new-stack
+	    new-queue
+	    stack-pop!
+	    stack-push!
+	    stack-top
+	    stack-empty?
+	    
+	    queue-out!
+	    queue-in!
+	    queue-head
+	    queue-tail
+	    queue-empty?
+	    
+	    hash-keys
+	    
+	    make-compiler
+	    make-file-compiler
+	    make-token-checker))
 
 (define-syntax-rule (group-checker what c)
   (and (not (eof-object? c))
