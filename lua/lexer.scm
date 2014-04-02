@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013
+;;  Copyright (C) 2013,2014
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -30,8 +30,8 @@
       (and (not (eof-object? c)) (char-set-contains? char-set c)))))
 
 (define is-digit? (char-predicate "0123456789"))
-(define is-name-first? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
-(define (is-name? c) (or (is-name-first? c) (is-digit? c)))
+(define is-id-head? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
+(define (is-name? c) (or (is-id-head? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
 (define *delimiters* " \t\n()[]{};+-/%^~=<>")
 (define *operation-sign* "+-*/%^=~<>randot#")
@@ -76,51 +76,12 @@
     ("[" . lbracket)
     ("]" . rbracket)))
 
-(define *all-op* (append *arith-op* *relational-op* *logical-op* *misc-op*))
-
-(define (get-op-token lst)
-  (and (not (null? lst))  
-       (assoc-ref *all-op* (apply string lst))))
-(define (get-op-token str)
-  (and (not (string-null? str))
-       (assoc-ref *all-op* str)))
-
-(define (is-op? c port)
-  (define (check port lst)
-    (let lp((l lst) (r '()))
-      (cond
-       ((null? l) (string->symbol (apply string lst)))
-       ((and (char? (peek-char port)) (char=? (peek-char port) (car l)))
-        (lp (cdr l) (cons (read-char port) r)))
-       (else 
-        (for-each (lambda (c) (unget-char1 c port)) (reverse r))
-        #f))))
-  (cond
-   ((group-checker *operation-sign* c)
-    (case c
-      ((#\o) (check port '(#\o #\r)))
-      ((#\a) (check port '(#\a #\n #\d)))
-      ((#\n) (check port '(#\n #\o #\t)))
-      (else #f)))
-   (else #f)))
-
-(define (get-op port)
-  (let lp((c (read-char port)) (op '()))
-    (let ((tk (get-op-token op)))
-      (cond
-       ((eof-object? c)
-        (get-op-token op))
-       ((not tk)
-        (if (group-checker *operation-sign* c)
-            (lp (read-char port) (cons c op))
-            (lex-error "invalid op" (port-source-location port)
-                       (apply string (reverse (cons c op))))))
-       (else
-        (unget-char1 c port)
-        (get-op-token op))))))
+(define (is-puctuation? c)
+  (group-checker *punctuations* c))
 
 (define (is-delimiter? c)
-  (group-checker *delimiters* c))
+  (or (eof-object? c)
+      (group-checker *delimiters* c)))
 
 (define is-whitespace?
   (lambda (c)
@@ -136,6 +97,50 @@
 
 (define (is-reserved-word? str)
   (memq (string->symbol str) *reserved-words*))
+
+(define *all-op* (append *arith-op* *relational-op* *logical-op* *misc-op*))
+
+(define (get-op-token lst)
+  (and (not (null? lst))  
+       (assoc-ref *all-op* (list->string (reverse lst)))))
+
+(define (is-op? c port)
+  (define (check port lst)
+    (let lp((l lst) (r '()))
+      (cond
+       ((and (null? l) ; hit all chars 
+	     (is-delimiter? (peek-char port))) ; next char is delimiter
+	;; hit an op, return as symbol
+	(string->symbol (list->string lst)))
+       ((and (not (null? l)) (char? (peek-char port)) (char=? (peek-char port) (car l)))
+        (lp (cdr l) (cons (read-char port) r)))
+       (else
+	;; missed op, give all the chars back 
+        (for-each (lambda (x) (unget-char1 x port)) (reverse r))
+        #f))))
+  (cond
+   ((group-checker *operation-sign* c)
+    (case c
+      ((#\o) (check port '(#\o #\r)))
+      ((#\a) (check port '(#\a #\n #\d)))
+      ((#\n) (check port '(#\n #\o #\t)))
+      (else  ; now it must be an op anyway, maybe invalid, but impossible not
+       (get-op port))))
+   (else #f)))
+
+(define (get-op port)
+  (let lp((c (read-char port)) (op '()))
+    (cond
+     ((and (not (group-checker *operation-sign* (peek-char port))) ; if op is end
+	   ;; and if it can be delimited
+	   ;;(is-delimiter? (peek-char port)) ;;(is-puctuation? (peek-char port)))
+	   (get-op-token (cons c op))) ; and if it's an valid op
+      => identity)
+     (else 
+      (if (group-checker *operation-sign* (peek-char port)) ; next maybe part of op
+	  (lp (read-char port) (cons c op)) ; read next
+	  (lex-error "invalid op" (port-source-location port)
+		     (list->string (reverse (cons c op)))))))))
 
 (define (get-main-number port)
   (let ((num (read-word port)))
@@ -154,7 +159,7 @@
           (else (error "wrong sign" sign)))
         (lex-error "Invalid exponent" (port-source-location port) e))))
 
-;; Lua only have float number, so we conver it to inexact
+;; Lua only has float number, so we convert it to inexact
 (define (compose-number main exponent)
   (exact->inexact (* main (expt 10 exponent))))
 
@@ -293,10 +298,7 @@
          (else (return port 'dot #f))))) ; dot .
      ((is-op? c port)
       => (lambda (op)
-           (let ((op1 (if op op (get-op port))))
-             (if op1
-                 (return port op1 #f)
-                 (lex-error "invalid op!" (port-source-location port) #f)))))
+	   (return port op #f)))
      ((char=? c #\-)
       (read-char port) ; skip #\-
       (cond
@@ -324,7 +326,7 @@
     (else
      (cond
       ((eof-object? c) '*eoi*)
-      ((is-name-first? c)
+      ((is-id-head? c)
        (receive (cat val)
            (read-lua-identifier port)
          (return port cat val)))
