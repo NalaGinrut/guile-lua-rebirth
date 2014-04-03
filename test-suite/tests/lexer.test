@@ -1,0 +1,46 @@
+;;  Lua lexer tests
+;;  -*-  indent-tabs-mode:nil; coding: utf-8 -*-
+;;  Copyright (C) 2014
+;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
+;;  This file is free software: you can redistribute it and/or modify
+;;  it under the terms of the GNU General Public License as published by
+;;  the Free Software Foundation, either version 3 of the License, or
+;;  (at your option) any later version.
+
+;;  This file is distributed in the hope that it will be useful,
+;;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;  GNU General Public License for more details.
+
+;;  You should have received a copy of the GNU General Public License
+;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+(define-module (test lexer)
+  #:use-module (language lua utils)
+  #:use-module (ice-9 match)
+  #:use-module (test-suite lib))
+
+;; export all things
+(eval-when (eval load compile)
+  (export-all-from-module! '(language lua lexer)))
+
+;; TODO: add more cases
+(define *function-define-tests*
+  `(("function add (a) \n local num = 0 \n return sum\n end" 
+     . (function id lparen id rparen local id assign number return id end))
+    ))
+
+(with-test-prefix "Lua lexer test"
+
+  (pass-if "function define"
+    (for-each
+     (lambda (t)
+       (match t
+         ((src . expect)
+          (let ((r (debug-lua-tokenizer src)))
+            (or (equal? r expect)
+                (error "function define: Failed:" src expect r))))
+         (else (error "Invalid *function-define-tests* case!" t))))))
+
+  ;; TODO: add more tests
+)
