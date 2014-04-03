@@ -32,7 +32,7 @@
 
 (define is-digit? (char-predicate "0123456789"))
 (define is-id-head? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
-(define (is-name? c) (or (is-id-head? c) (is-digit? c)))
+(define (valid-id? c) (or (is-id-head? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
 (define *delimiters* " \t\n()[]{};+-/%^~=<>\"")
 (define *operation-sign* "+-*/%^=~<>randot#")
@@ -77,8 +77,11 @@
     ("[" . lbracket)
     ("]" . rbracket)))
 
-(define (is-puctuation? c)
-  (group-checker *punctuations* c))
+(define-syntax-rule (punc->symbol c)
+  (assoc-ref *punctuations* (string c)))
+
+(define-syntax-rule (is-puctuation? c)
+  (punc->symbol c))
 
 (define (is-delimiter? c)
   (or (eof-object? c)
@@ -97,7 +100,7 @@
     do while repeat until local for break in not))
 
 (define (is-reserved-word? str)
-  (memq (string->symbol str) *reserved-words*))
+  (and=> (memq (string->symbol str) *reserved-words*) car))
 
 (define *all-op* (append *arith-op* *relational-op* *logical-op* *misc-op*))
 
@@ -138,6 +141,7 @@
         => identity)
        (else
         ;; missed op, give back all the chars
+        (unget-char1 c port)
         (for-each (lambda (x) (unget-char1 x port)) (reverse op))
         #f)))
      (else 
@@ -241,12 +245,6 @@
       (read-line port)) ; comment in comment
      (else (read-line port))))) ; skip line comment
 
-(define-syntax-rule (punc->symbol c)
-  (assoc-ref *punctuations* (string c)))
-
-(define-syntax-rule (is-puctuation? c)
-  (punc->symbol c))
-
 ;; As Lua specification, underscore follows an UPPERCASE char is a special-id
 (define (is-special-id? id)
   (and (> (string-length id) 1)
@@ -254,13 +252,14 @@
        (char-upper-case? (string-ref id 1))))
 
 (define (is-valid-id? id)
-  (not (string-any (lambda (c) (and (not (is-name? c)) c)) id)))
-    
+  (not (string-any (lambda (c) (and (not (valid-id? c)) c)) id)))
+
 (define (read-lua-identifier port)
   (let ((id (read-word port)))
     (cond
      ((is-reserved-word? id)
-      (values (string->symbol id) #f))
+      => (lambda (res)
+           (values res #f)))
      ((is-special-id? id) ; special id
       (if (is-valid-id? id)
           (values 'sp-id id)
