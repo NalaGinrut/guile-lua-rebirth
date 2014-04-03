@@ -18,7 +18,8 @@
   #:use-module (ice-9 receive)
   #:use-module (system base lalr)
   #:use-module (language lua utils)
-  #:export (make-lua-tokenizer debug-lua-tokenizer))
+  #:export (make-lua-tokenizer
+            debug-lua-tokenizer))
 
 ;; Character predicates
 
@@ -33,7 +34,7 @@
 (define is-id-head? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
 (define (is-name? c) (or (is-id-head? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
-(define *delimiters* " \t\n()[]{};+-/%^~=<>")
+(define *delimiters* " \t\n()[]{};+-/%^~=<>\"")
 (define *operation-sign* "+-*/%^=~<>randot#")
 
 (define *arith-op*
