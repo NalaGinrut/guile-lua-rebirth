@@ -132,11 +132,14 @@
 (define (get-op port)
   (let lp((c (read-char port)) (op '()))
     (cond
-     ((and (not (group-checker *operation-sign* (peek-char port))) ; if op is end
-	   ;; and if it can be delimited
-	   ;;(is-delimiter? (peek-char port)) ;;(is-puctuation? (peek-char port)))
-	   (get-op-token (cons c op))) ; and if it's an valid op
-      => identity)
+     ((not (group-checker *operation-sign* (peek-char port))) ; if op is end
+      (cond
+       ((get-op-token (cons c op)) ; and if it's an valid op
+        => identity)
+       (else
+        ;; missed op, give back all the chars
+        (for-each (lambda (x) (unget-char1 x port)) (reverse op))
+        #f)))
      (else 
       (if (group-checker *operation-sign* (peek-char port)) ; next maybe part of op
 	  (lp (read-char port) (cons c op)) ; read next
