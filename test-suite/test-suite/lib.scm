@@ -68,7 +68,9 @@
  make-count-reporter print-counts
  make-log-reporter
  full-reporter
- user-reporter))
+ user-reporter
+
+ export-all-from-module!))
 
 
 ;;;; If you're using Emacs's Scheme mode:
@@ -701,3 +703,9 @@
       (apply full-reporter result name args)))
 
 (set! default-reporter full-reporter)
+
+(eval-when (eval load compile)
+ (define (export-all-from-module! module-name)
+   (let ((mod (resolve-module module-name)))
+         (module-for-each (lambda (s m) 
+                            (module-add! (current-module) s m)) mod))))

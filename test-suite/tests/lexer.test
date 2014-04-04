@@ -16,18 +16,58 @@
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 (define-module (test lexer)
-  #:use-module (language lua utils)
   #:use-module (ice-9 match)
+  #:use-module (srfi srfi-1)
   #:use-module (test-suite lib))
 
 ;; export all things
 (eval-when (eval load compile)
   (export-all-from-module! '(language lua lexer)))
 
+(define-syntax-rule (pick-out a b)
+  (any (lambda (x y) (and (not (eqv? x y)) (cons x y))) a b))
+
 ;; TODO: add more cases
 (define *function-define-tests*
-  `(("function add (a) \n local num = 0 \n return sum\n end" 
+  `(("function func (a) \n local num = 0 \n return sum\n end" 
      . (function id lparen id rparen local id assign number return id end))
+    ("function add(a,b)
+       local sum = a+b
+       return sum
+      end"
+     . (function id lparen id comma id rparen local id assign id add id return id end))
+    ))
+
+(define *if-case-tests*
+  `(("if a<0 then a = 0 end"
+     . (if id lt number then id assign number end))
+    ("if line > MAXLINES then
+       showpage()
+       line = 0
+      end"
+     . (if id gt id then id lparen rparen id assign number end))
+    ("if op == \"+\" then
+      r = a + b
+     elseif op == \"-\" then
+      r = a - b
+     elseif op == \"*\" then
+      r = a*b
+     elseif op == \"/\" then
+      r = a/b
+     else
+      error(\"invalid operation\")
+     end"
+      . (if id eq string then
+            id assign id add id
+         elseif id eq string then
+            id assign id minus id
+         elseif id eq string then
+            id assign id multi id
+         elseif id eq string then
+            id assign id div id
+         else
+            id lparen string rparen
+         end))
     ))
 
 (with-test-prefix "Lua lexer test"
@@ -39,8 +79,22 @@
          ((src . expect)
           (let ((r (debug-lua-tokenizer src)))
             (or (equal? r expect)
-                (error "function define: Failed:" src expect r))))
-         (else (error "Invalid *function-define-tests* case!" t))))))
+                (error "function define: Failed:" src expect r (pick-out expect r)))))
+         (else (error "Invalid *function-define-tests* case!" t))))
+     *function-define-tests*)
+    #t)
+
+  (pass-if "if-case test"
+    (for-each
+     (lambda (t)
+       (match t
+         ((src . expect)
+          (let ((r (debug-lua-tokenizer src)))
+            (or (equal? r expect)
+                (error "if-case test: Failed:" src expect r (pick-out expect r)))))
+         (else (error "Invalid *if-case-tests* case!" t))))
+     *if-case-tests*)
+    #t)
 
   ;; TODO: add more tests
 )
