@@ -96,6 +96,21 @@
          id lparen id rparen))
     ))
 
+(define *comment-case-tests*
+  `(("-- hello.lua
+      -- the first program in every language
+      io.write(\"Hello world, from \", _VERSION, \"!\n\")"
+     . (id dot id lparen string comma sp-id comma string rparen))
+    ("---[[
+      print(10)    --> 10
+      --]]"
+     . (id lparen number rparen))
+    ("--[[
+      print(10)    -- no action (comment)
+      --]]"
+     . ())
+    ))
+
 (define-syntax-rule (test-it name tests tests-name)
   (for-each
    (lambda (t)
@@ -123,6 +138,10 @@
 
   (pass-if "loop-case test"
     (test-it "loop-case test" *loop-case-tests* "*loop-case-tests*")
+    #t)
+
+  (pass-if "comment test"
+    (test-it "comment test" *comment-case-tests* "*comment-case-tests*")
     #t)
 
   ;; TODO: add more tests
