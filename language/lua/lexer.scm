@@ -35,8 +35,10 @@
 (define (valid-id? c) (or (is-id-head? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
 (define *delimiters* " \t\n()[]{};+-/*%^~=<>\".,")
+(define *num-delimiters* " \t\n()[]{};/*%^~=<>\".,")
 (define is-op-sign0? (char-predicate "+-*/%^=~<>#"))
 (define is-op-sign1? (char-predicate "randot"))
+(define is-num-delimiter? (char-predicate *num-delimiters*))
 
 (define *arith-op*
   '(("+" . add)
@@ -99,13 +101,14 @@
   (or (eof-object? c)
       (group-checker *delimiters* c)))
 
-(define is-whitespace?
-  (lambda (c)
-    (and (char? c) (char-set-contains? char-set:whitespace c))))
+(define (is-whitespace? c)
+  (and (char? c) (char-set-contains? char-set:whitespace c)))
 
-(define read-word
-  (lambda (port)
-    (read-delimited *delimiters* port 'peek)))
+(define (read-word port)
+  (read-delimited *delimiters* port 'peek))
+
+(define (read-num port)
+  (read-delimited *num-delimiters* port 'peek))
 
 (define *reserved-words*
   '(return function end if then elseif else true false nil or and
@@ -163,7 +166,7 @@
 		     (list->string (reverse (cons c op)))))))))
 
 (define (get-main-number port)
-  (let ((num (read-word port)))
+  (let ((num (read-num port)))
     (cond
      ((eqv? #\. (peek-char port)) ; not an integer
       (read-char port)
@@ -171,7 +174,7 @@
      (else (string->number num))))) ; return integer
 
 (define (get-exponent-number port sign)
-  (let ((e (string->number (read-word port))))
+  (let ((e (string->number (read-num port))))
     (if (integer? e)
         (case sign
           ((#\-) (- e))
@@ -179,11 +182,12 @@
           (else (error "wrong sign" sign)))
         (lex-error "Invalid exponent" (port-source-location port) e))))
 
-;; Lua only has float number, so we convert it to inexact
+;; Lua only has float number, so we produce inexact number
 (define (compose-number main exponent)
-  (exact->inexact (* main (expt 10 exponent))))
+  (* main (expt 10.0 exponent)))
 
 (define (read-lua-number port)
+
   (let* ((main (get-main-number port))
          (exponent (cond
                     ((or (member (peek-char port) '(#\e #\E)))
@@ -193,7 +197,7 @@
                        (get-exponent-number port (read-char port))) 
                       ((is-digit? (peek-char port))
                        (get-exponent-number port #\+)) ; default is positive
-                      ((is-delimiter? (peek-char port))
+                      ((is-num-delimiter? (peek-char port))
                        0) ; no exponent
                       (else (lex-error "Invalid exponent number!" 
                                        (port-source-location port) #f))))
