@@ -70,7 +70,26 @@
          end))
     ))
 
-(with-test-prefix "Lua lexer test"
+(define *loop-case-tests*
+  `(("local i = 1
+      while a[i] do
+       print(a[i])
+       i = i + 1
+      end"
+     . (local id assign number
+        while id lbracket id rbracket do
+        id lparen id lbracket id rbracket rparen
+        id assign id add number end))
+    ("repeat
+       line = os.read()
+      until line ~= \"\"
+      print(line)"
+      . (repeat id assign id dot id lparen rparen
+         until id neq string
+         id lparen id rparen))
+    ))
+
+(with-test-prefix "Lua lexer token test"
 
   (pass-if "function define"
     (for-each
@@ -96,5 +115,16 @@
      *if-case-tests*)
     #t)
 
+  (pass-if "loop-case test"
+    (for-each
+     (lambda (t)
+       (match t
+         ((src . expect)
+          (let ((r (debug-lua-tokenizer src)))
+            (or (equal? r expect)
+                (error "loop-case test: Failed:" src expect r (pick-out expect r)))))
+         (else (error "Invalid *loop-case-tests* case!" t))))
+     *loop-case-tests*)
+    #t)
   ;; TODO: add more tests
 )
