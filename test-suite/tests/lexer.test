@@ -28,6 +28,13 @@
   (any (lambda (x y) (and (not (eqv? x y)) (cons x y))) a b))
 
 ;; TODO: add more cases
+(define *expr-case-tests*
+  `(("a+b" . (id add id))
+    ("a-b" . (id minus id))
+    ("a/b" . (id div id))
+    ("a*b" . (id multi id))
+    ))
+
 (define *function-define-tests*
   `(("function func (a) \n local num = 0 \n return sum\n end" 
      . (function id lparen id rparen local id assign number return id end))
@@ -89,42 +96,34 @@
          id lparen id rparen))
     ))
 
+(define-syntax-rule (test-it name tests tests-name)
+  (for-each
+   (lambda (t)
+     (match t
+       ((src . expect)
+        (let ((r (debug-lua-tokenizer src)))
+          (or (equal? r expect)
+              (error (string-append name ": Failed:") src expect r (pick-out expect r)))))
+       (else (error (string-append "Invalid case in " tests-name) t))))
+   tests))
+
 (with-test-prefix "Lua lexer token test"
 
+  (pass-if "expr test"
+    (test-it "expr test" *expr-case-tests* "*expr-case-tests*")
+    #t)
+
   (pass-if "function define"
-    (for-each
-     (lambda (t)
-       (match t
-         ((src . expect)
-          (let ((r (debug-lua-tokenizer src)))
-            (or (equal? r expect)
-                (error "function define: Failed:" src expect r (pick-out expect r)))))
-         (else (error "Invalid *function-define-tests* case!" t))))
-     *function-define-tests*)
+    (test-it "function define" *function-define-tests* "*function-define-tests*")
     #t)
 
   (pass-if "if-case test"
-    (for-each
-     (lambda (t)
-       (match t
-         ((src . expect)
-          (let ((r (debug-lua-tokenizer src)))
-            (or (equal? r expect)
-                (error "if-case test: Failed:" src expect r (pick-out expect r)))))
-         (else (error "Invalid *if-case-tests* case!" t))))
-     *if-case-tests*)
+    (test-it "if-case test" *if-case-tests* "*if-case-tests*")
     #t)
 
   (pass-if "loop-case test"
-    (for-each
-     (lambda (t)
-       (match t
-         ((src . expect)
-          (let ((r (debug-lua-tokenizer src)))
-            (or (equal? r expect)
-                (error "loop-case test: Failed:" src expect r (pick-out expect r)))))
-         (else (error "Invalid *loop-case-tests* case!" t))))
-     *loop-case-tests*)
+    (test-it "loop-case test" *loop-case-tests* "*loop-case-tests*")
     #t)
+
   ;; TODO: add more tests
 )
