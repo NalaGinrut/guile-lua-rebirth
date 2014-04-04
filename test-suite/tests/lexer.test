@@ -25,7 +25,10 @@
   (export-all-from-module! '(language lua lexer)))
 
 (define-syntax-rule (pick-out a b)
-  (any (lambda (x y) (and (not (eqv? x y)) (cons x y))) a b))
+  (for-each 
+   (lambda (x y)
+     (format #t "~a~t===~t~a~t -> ~a~%" x y (eqv? x y)))
+   a b))
 
 ;; TODO: add more cases
 (define *expr-case-tests*
@@ -46,6 +49,45 @@
        return sum
       end"
      . (function id lparen id comma id rparen local id assign id add id return id end))
+    ("-- globals.lua
+      -- show all global variables
+
+      local seen={}
+
+      function dump(t,i)
+	seen[t]=true
+	local s={}
+	local n=0
+	for k in pairs(t) do
+		n=n+1 s[n]=k
+        end
+        table.sort(s)
+        for k,v in ipairs(s) do
+		print(i,v)
+		v=t[v]
+		if type(v)==\"table\" and not seen[v] then
+			dump(v,i..\"\t\")
+		end
+	end
+      end
+      dump(_G,\"\")"
+     . (local id assign lbrace rbrace
+	function id lparen id comma id rparen
+	id lbracket id rbracket assign true
+	local id assign lbrace rbrace
+	local id assign number
+	for id in id lparen id rparen do
+	id assign id add number
+	id lbracket id rbracket assign id
+	end
+	id dot id lparen id rparen
+	for id comma id in id lparen id rparen do
+	id lparen id comma id rparen
+	id assign id lbracket id rbracket
+	if id lparen id rparen eq string and not id lbracket id rbracket then
+	id lparen id comma id concat string rparen
+	end end end
+	id lparen sp-id comma string rparen))
     ))
 
 (define *if-case-tests*
@@ -127,7 +169,7 @@
        ((src . expect)
         (let ((r (debug-lua-tokenizer src)))
           (or (equal? r expect)
-              (error (string-append name ": Failed:") src expect r (pick-out expect r)))))
+              (error (string-append name ": Failed:") src (pick-out expect r)))))
        (else (error (string-append "Invalid case in " tests-name) t))))
    tests))
 
