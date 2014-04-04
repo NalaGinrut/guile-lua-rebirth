@@ -33,6 +33,9 @@
     ("a-b" . (id minus id))
     ("a/b" . (id div id))
     ("a*b" . (id multi id))
+    ("_"   . (sp-id)) ; dummy variable
+    ("_VERSION" . (sp-id))
+    ("_NoSuchVar" . (sp-id))
     ))
 
 (define *function-define-tests*
@@ -111,6 +114,12 @@
      . ())
     ))
 
+(define *reserved-word-test*
+  `(("return function end if then elseif else true false nil or and
+      do while repeat until local for break in not"
+     . (return function end if then elseif else true false nil or and
+	do while repeat until local for break in not))))
+
 (define-syntax-rule (test-it name tests tests-name)
   (for-each
    (lambda (t)
@@ -142,6 +151,10 @@
 
   (pass-if "comment test"
     (test-it "comment test" *comment-case-tests* "*comment-case-tests*")
+    #t)
+  
+  (pass-if "reserved word test"
+    (test-it "reserved word test" *reserved-word-test* "*reserved-word-test*")
     #t)
 
   ;; TODO: add more tests
