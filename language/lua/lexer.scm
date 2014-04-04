@@ -23,19 +23,20 @@
 
 ;; Character predicates
 
-;; Lua only accepts ASCII characters as of 5.2, so we define our own
-;; charsets here
+;; Lua only accepts ASCII characters in 5.2
+;; Define charsets for faster searching
 (define (char-predicate string)
-  (let ((char-set (string->char-set string)))
+  (let ((cs (string->char-set string)))
     (lambda (c)
-      (and (not (eof-object? c)) (char-set-contains? char-set c)))))
+      (and (not (eof-object? c)) (char-set-contains? cs c)))))
 
 (define is-digit? (char-predicate "0123456789"))
 (define is-id-head? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
 (define (valid-id? c) (or (is-id-head? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
 (define *delimiters* " \t\n()[]{};+-/*%^~=<>\".,")
-(define *operation-sign* "+-*/%^=~<>randot#")
+(define is-op-sign0? (char-predicate "+-*/%^=~<>#"))
+(define is-op-sign1? (char-predicate "randot"))
 
 (define *arith-op*
   '(("+" . add)
@@ -77,6 +78,17 @@
     ("[" . lbracket)
     ("]" . rbracket)))
 
+(define-syntax-rule (maybe-op-sign? c)
+  (or (is-op-sign1? c) (is-op-sign0? c)))
+
+(define-syntax-rule (maybe-op-stop? c last)
+  (cond
+   ((is-op-sign0? last)
+    (not (is-op-sign0? c)))
+   ((is-op-sign1? last)
+    (not (is-op-sign1? c)))
+   (else #t)))
+  
 (define-syntax-rule (punc->symbol c)
   (assoc-ref *punctuations* (string c)))
 
@@ -123,7 +135,7 @@
         (for-each (lambda (x) (unget-char1 x port)) (reverse r))
         #f))))
   (cond
-   ((group-checker *operation-sign* c)
+   ((maybe-op-sign? c)
     (case c
       ((#\o) (check port '(#\o #\r)))
       ((#\a) (check port '(#\a #\n #\d)))
@@ -135,7 +147,7 @@
 (define (get-op port)
   (let lp((c (read-char port)) (op '()))
     (cond
-     ((not (group-checker *operation-sign* (peek-char port))) ; if op is end
+     ((maybe-op-stop? (peek-char port) c) ; if op is end
       (cond
        ((get-op-token (cons c op)) ; and if it's an valid op
         => identity)
@@ -145,7 +157,7 @@
         (for-each (lambda (x) (unget-char1 x port)) (reverse op))
         #f)))
      (else 
-      (if (group-checker *operation-sign* (peek-char port)) ; next maybe part of op
+      (if (maybe-op-sign? (peek-char port)) ; next maybe part of op
 	  (lp (read-char port) (cons c op)) ; read next
 	  (lex-error "invalid op" (port-source-location port)
 		     (list->string (reverse (cons c op)))))))))
@@ -245,11 +257,13 @@
       (read-line port)) ; comment in comment
      (else (read-line port))))) ; skip line comment
 
-;; As Lua specification, underscore follows an UPPERCASE char is a special-id
+;; As Lua specification, underscore follows one or more UPPERCASE is a special-id
+;; Specifically, single underscore "_" is reserved as dummy variable
 (define (is-special-id? id)
-  (and (> (string-length id) 1)
-       (char=? (string-ref id 0) #\_)
-       (char-upper-case? (string-ref id 1))))
+  (and (char=? (string-ref id 0) #\_)
+       (or (= (string-length id) 1) ; single underscore
+	   ;; or is it _X...
+	   (char-upper-case? (string-ref id 1)))))	   
 
 (define (is-valid-id? id)
   (not (string-any (lambda (c) (and (not (valid-id? c)) c)) id)))
