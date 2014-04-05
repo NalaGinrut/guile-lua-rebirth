@@ -61,3 +61,4 @@ version.scm
 *.m4
 ltmain.sh
 libtool
+\#*
