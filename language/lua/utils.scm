@@ -19,8 +19,7 @@
   #:use-module (system base compile)
   #:use-module (system base lalr)
   #:use-module (system base pmatch)
-  #:export (group-checker
-	    location
+  #:export (location
 	    unget-char1
 	    syntax-error
 	    lex-error
@@ -49,10 +48,6 @@
 	    make-compiler
 	    make-file-compiler
 	    make-token-checker))
-
-(define-syntax-rule (group-checker what c)
-  (and (not (eof-object? c))
-       (string-contains what (string c))))
 
 (define (location x)
   (and (pair? x)
