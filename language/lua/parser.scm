@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013
+;;  Copyright (C) 2013,2014
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -21,126 +21,6 @@
 
 (define (read-lua port)
   (make-reader make-parser make-lua-tokenizer port))
-
-;; Lua 5.1 BNF in Lemon by RiciLake
-
-;; chunk      ::= block .
-
-;; semi       ::= ';' .
-;; semi       ::= .
-
-;; block      ::= scope statlist .
-;; block      ::= scope statlist laststat semi .
-;; ublock     ::= block 'until' exp .
-
-;; scope      ::= .
-;; scope      ::= scope statlist binding semi.
-           
-;; statlist   ::= .
-;; statlist   ::= statlist stat semi .
-
-;; stat       ::= 'do' block 'end' .
-;; stat       ::= 'while' exp 'do' block 'end' .
-;; stat       ::= repetition 'do' block 'end' .
-;; stat       ::= 'repeat' ublock .
-;; stat       ::= 'if' conds 'end' .
-;; stat       ::= 'function' funcname funcbody .
-;; stat       ::= setlist '=' explist1 .
-;; stat       ::= functioncall .
-
-;; repetition ::= 'for' NAME '=' explist23 .
-;; repetition ::= 'for' namelist 'in' explist1 .
-           
-;; conds      ::= condlist .
-;; conds      ::= condlist 'else' block .
-;; condlist   ::= cond .
-;; condlist   ::= condlist 'elseif' cond .
-;; cond       ::= exp 'then' block .
-           
-;; laststat   ::= 'break' .
-;; laststat   ::= 'return' .
-;; laststat   ::= 'return' explist1 .
-
-;; binding    ::= 'local' namelist .
-;; binding    ::= 'local' namelist '=' explist1 .
-;; binding    ::= 'local' 'function' NAME funcbody .
-
-;; funcname   ::= dottedname .
-;; funcname   ::= dottedname ':' NAME .
-
-;; dottedname ::= NAME .
-;; dottedname ::= dottedname '.' NAME .
-
-;; namelist   ::= NAME .
-;; namelist   ::= namelist ',' NAME .
-
-;; explist1   ::= exp .
-;; explist1   ::= explist1 ',' exp .
-;; explist23  ::= exp ',' exp .
-;; explist23  ::= exp ',' exp ',' exp .
-
-;; %left      'or' .
-;; %left      'and' .
-;; %left      '<' '<=' '>' '>=' '==' '~=' .
-;; %right     '..' .
-;; %left      '+' '-' .
-;; %left      '*' '/' '%' .
-;; %right     'not' '#' .
-;; %right     '^' .
-
-;; exp        ::= 'nil'|'true'|'false'|NUMBER|STRING|'...' .
-;; exp        ::= function .
-;; exp        ::= prefixexp .
-;; exp        ::= tableconstructor .
-;; exp        ::= 'not'|'#'|'-' exp .         ['not']
-;; exp        ::= exp 'or' exp .
-;; exp        ::= exp 'and' exp .
-;; exp        ::= exp '<'|'<='|'>'|'>='|'=='|'~=' exp .
-;; exp        ::= exp '..' exp .
-;; exp        ::= exp '+'|'-' exp .
-;; exp        ::= exp '*'|'/'|'%' exp .
-;; exp        ::= exp '^' exp .
-           
-;; setlist    ::= var .
-;; setlist    ::= setlist ',' var .
-
-;; var        ::= NAME .
-;; var        ::= prefixexp '[' exp ']' .
-;; var        ::= prefixexp '.' NAME .
-
-;; prefixexp  ::= var .
-;; prefixexp  ::= functioncall .
-;; prefixexp  ::= OPEN exp ')' .
-
-;; functioncall ::= prefixexp args .
-;; functioncall ::= prefixexp ':' NAME args .
-
-;; args        ::= '(' ')' .
-;; args        ::= '(' explist1 ')' .
-;; args        ::= tableconstructor .
-;; args        ::= STRING .
-
-;; function    ::= 'function' funcbody .
-
-;; funcbody    ::= params block 'end' .
-
-;; params      ::= '(' parlist ')' .
-
-;; parlist     ::= .
-;; parlist     ::= namelist .
-;; parlist     ::= '...' .
-;; parlist     ::= namelist ',' '...' .
-
-;; tableconstructor ::= '{' '}' .
-;; tableconstructor ::= '{' fieldlist '}' .
-;; tableconstructor ::= '{' fieldlist ','|';' '}' .
-
-;; fieldlist   ::= field .
-;; fieldlist   ::= fieldlist ','|';' field .
-            
-;; field       ::= exp .
-;; field       ::= NAME '=' exp .
-;; field       ::= '[' exp ']' '=' exp .
 
 (define (make-parser)
   (lalr-parser
@@ -175,14 +55,19 @@
    
    (chunk (block) : $1)
    
-   (terminator (semi-colon) : $1)
+   (terminator (semi-colon) : $1
+	       () : '(begin))
 
-   (block () : '(begin) 
-          (stmt-list) : $1)
+   (block (scope stmt-list) : '(begin)
+	  (scope stmt-list last-stmt terminator) : xx)
+   
+   (ublock (block until exp) : `(do ,$3 until ,$1))
 
-   (stmt-list (stmt) : $1
-              (stmt stmt-list) : `(begin ,$1 ,$2)
-              (stmt-list last-stmt terminator) : `(begin ,$1 ,$2))
+   (scope () : '(begin)
+	  (scope stmt-list binding terminator) : `(begin ,$1 ,$2 ,$3))
+
+   (stmt-list () : '(begin)
+              (stmt-list stmt terminator) : `(begin ,$1 ,$2))
 
    (last-stmt (break) : '(break)
               (return) : '(returned) ; is it proper to return *unspecified* 
@@ -191,11 +76,11 @@
    (stmt (do block end) : `(do ,$2)
          (while exp do block end) : `(while ,$2 do ,$4)
          (repetition) : $1
-         (repeat block until exp) : `(repeat ,$2 until ,$3)
+         (repeat unblock) : `(repeat ,$2 until ,$3)
          (if-stmt) : $1
          (function-stmt) : $1
          (set-list assign exp-list1) : `(global-assign ,$1 ,$3)
-         (local-binding) : $1)
+         (binding) : $1)
 
    (repetition (for name assign exp-list23 do block end) 
                : `(for ,$2 ,$4 do ,$6)
@@ -213,18 +98,20 @@
    (elseif-stmt (elseif exp then block) : `(if ,$2 then ,$3)
                 (elseif exp then block else block) : `(if ,$2 then ,$3 else ,$4))
 
-   (local-binding (local name-list) : '(begin) ; nothing to do 
-                  (local name-list assign exp-list1) : `(local-assign ,$3 ,$4)
-                  (local function name funcbody) : `(local function ,$3 ,$4))
+   (binding (local name-list) : '(begin) ; nothing to do 
+	    (local name-list assign exp-list1) : `(local-assign ,$3 ,$4)
+	    (local function name funcbody) : `(local function ,$3 ,$4))
 
    (func-name (dotted-name) : $1
               (dotted-name colon name) : `(func-self-pass-in ,$1 ,$3))
 
    (dotted-name (name) : $1
-                (dotted-name dot name) : `(func-dot-name ,$1 ,$3))
+                (dotted-name dot name) : `(dot-name ,$1 ,$3))
 
-   (name-list (name) : $1
-              (name-list dot name) : `(dot-name ,$1 ,$2))
+   ;; TODO: add comment for name-list, what's it used for?
+   (name-list () : '()
+	      (name) : $1
+              (name-list dot name) : `(name-list ,$1 ,@$3))
 
    (name (id) : $1
          (sp-id) : $1)
@@ -241,7 +128,7 @@
         (numbers) : $1
         (string) : `(string ,$1)
         (tri-dots) : $1
-        ;;(function) : $1
+        (function-stmt) : $1 ; function def could be expr
         (prefix-exp) : $1
         (table-constructor) : $1
         (not exp) : `(not ,$2)
