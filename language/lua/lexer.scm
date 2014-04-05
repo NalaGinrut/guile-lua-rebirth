@@ -166,7 +166,6 @@
     (let lp((c (peek-char port)) (ret '()))
       (cond
        ((is-delimiter? c) ; normal number
-	(read-char port)
 	(list->string (reverse ret)))
        ((memv c '(#\e #\E)) ; exponent main number
 	(list->string (reverse ret)))
@@ -198,8 +197,7 @@
          (exponent (cond
                     ((memv (peek-char port) '(#\e #\E))
                      (read-char port)
-		     (display "hit!\n")
-                     (cond
+		     (cond
                       ((member (peek-char port) '(#\- #\+)) ; expt have sign
                        (get-exponent-number port (read-char port))) 
                       ((is-digit? (peek-char port))
