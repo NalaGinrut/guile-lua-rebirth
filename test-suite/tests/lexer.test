@@ -44,6 +44,8 @@
     ("1-6"  . (number minus number))
     ("1e+6" . (number))
     ("1+6"  . (number add number))
+    ("+6"   . (add number))
+    ("-6"   . (minus number))
     ))
 
 (define *function-define-tests*
