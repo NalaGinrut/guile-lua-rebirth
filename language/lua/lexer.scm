@@ -381,8 +381,8 @@
                        (eq? (lexical-token-category (stack-top stack)) 'lparen))
                   (stack-pop! stack)
                   (lex-error "unexpected right parenthesis"
-                                (lexical-token-source tok)
-                                #f)))
+			     (lexical-token-source tok)
+			     #f)))
              ((lbracket)
               (stack-push! stack tok)) ; ready to check brackets
              ((rbracket) ; rbracket fit
@@ -390,17 +390,17 @@
                        (eq? (lexical-token-category (car stack)) 'lbracket))
                   (stack-pop! stack)
                   (lex-error "unexpected right bracket"
-                                (lexical-token-source tok)
-                                #f)))
+			     (lexical-token-source tok)
+			     #f)))
              ((lbrace)
               (stack-push! stack tok)) ; ready to check braces
              ((rbrace) ; rbrace fit
               (if (and (not (stack-empty? stack))
                        (eq? (lexical-token-category (stack-top stack)) 'lbrace))
-                  (set! stack (cdr stack))
+                  (stack-pop! stack)
                   (lex-error "unexpected right brace"
-                                (lexical-token-source tok)
-                                #f)))
+			     (lexical-token-source tok)
+			     #f)))
              ;; NOTE: this checker promised the last semi-colon before eof will 
              ;;       return '*eoi* directly, or we have to press EOF (C-d) to 
              ;;       end the input.
