@@ -1,0 +1,70 @@
+;;  Lua parser tests
+;;  -*-  indent-tabs-mode:nil; coding: utf-8 -*-
+;;  Copyright (C) 2014
+;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
+;;  This file is free software: you can redistribute it and/or modify
+;;  it under the terms of the GNU General Public License as published by
+;;  the Free Software Foundation, either version 3 of the License, or
+;;  (at your option) any later version.
+
+;;  This file is distributed in the hope that it will be useful,
+;;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;  GNU General Public License for more details.
+
+;;  You should have received a copy of the GNU General Public License
+;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+(define-module (test parser)
+  #:use-module (ice-9 match)
+  #:use-module (ice-9 format)
+  #:use-module (srfi srfi-1)
+  #:use-module (test-suite lib))
+
+;; export all things
+(eval-when (eval load compile)
+  (export-all-from-module! '(language lua parser)))
+
+(define-syntax-rule (pick-out a b)
+  (for-each 
+   (lambda (x y)
+     (format #t "~a~t===~t~a~t -> ~a~%" x y (eqv? x y)))
+   a b))
+
+(define *precedence-tests*
+  `(("1+2*3/4-5" 
+     . (minus 
+        (add (number 1) 
+             (div 
+              (multi (number 2) (number 3))
+              (number 4)))
+        (number 5)))
+    ("(1+2)*3/4-5"
+     . (minus 
+        (div 
+         (multi 
+          (add (number 1) (number 2))
+          (number 3))
+         (number 4))
+        (number 5)))
+    ))
+      
+(define-syntax-rule (test-it name tests tests-name)
+  (for-each
+   (lambda (t)
+     (match t
+       ((src . expect)
+        (let ((r (call-with-input-string src read-lua)))
+          (or (equal? r expect)
+              (error (string-append name ": Failed:") src (pick-out expect r)))))
+       (else (error (string-append "Invalid case in " tests-name) t))))
+   tests))
+
+(display "\n=== Lua parser syntax tests ===\n")
+
+(with-test-prefix "Lua parser"
+
+  (pass-if "precedence tests"
+    (test-it "precedence tests" *precedence-tests* "*precedence-tests*")
+    #t)
+  )

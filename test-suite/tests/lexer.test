@@ -228,7 +228,9 @@
        (else (error (string-append "Invalid case in " tests-name) t))))
    tests))
 
-(with-test-prefix "Lua lexer token test"
+(display "\n=== Lua lexer token tests ===\n")
+
+(with-test-prefix "Lua lexer"
 
   (pass-if "expr test"
     (test-it "expr test" *expr-case-tests* "*expr-case-tests*")
