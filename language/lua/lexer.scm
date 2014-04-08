@@ -405,7 +405,7 @@
              ;;       return '*eoi* directly, or we have to press EOF (C-d) to 
              ;;       end the input.
              ;;       BUT I WONDER IF THERE'S A BETTER WAY FOR THIS!
-             ((semi-colon)
+             ((semi-colon *eoi*)
               ;; FIXME:
               ;; Lua doesn't need semi-colon as statment-ending
               (set! eoi? (stack-empty? stack))))
