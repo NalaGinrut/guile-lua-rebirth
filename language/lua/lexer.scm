@@ -386,8 +386,8 @@
              ((lbracket)
               (stack-push! stack tok)) ; ready to check brackets
              ((rbracket) ; rbracket fit
-              (if (and (pair? stack)
-                       (eq? (lexical-token-category (car stack)) 'lbracket))
+              (if (and (not (stack-empty? stack))
+                       (eq? (lexical-token-category (stack-top stack)) 'lbracket))
                   (stack-pop! stack)
                   (lex-error "unexpected right bracket"
 			     (lexical-token-source tok)
