@@ -48,162 +48,91 @@
     (left: multi div mod)
     (right: not hash)
     (right: expt)
-    (right: assign))
+    (right: assign))    
    
    (program: (chunk) : $1
              (*eoi*) : *eof-object*)
    
    (chunk (block) : $1)
-   
-   (terminator (semi-colon) : $1
-	       () : '(begin))
 
-   (block (scope stmt-list) : '(begin)
-	  (scope stmt-list last-stmt terminator) : xx)
-   
-   (ublock (block until exp) : `(do ,$3 until ,$1))
+   (terminator (semi-colon) : 'semi-colon) ; FIXME: accept semi-colon
 
-   (scope () : '(begin)
-	  (scope stmt-list binding terminator) : `(begin ,$1 ,$2 ,$3))
+   (stmt (chunk terminator) : `(begin $1))
 
-   (stmt-list () : '(begin)
-              (stmt-list stmt terminator) : `(begin ,$1 ,$2))
+   (block (exp) : $1)
 
-   (last-stmt (break) : '(break)
-              (return) : '(returned) ; is it proper to return *unspecified* 
-              (return exp-list1) : `(returned ,$1))
+   (name (id) : `(id ,$1))
 
-   (stmt (do block end) : `(do ,$2)
-         (while exp do block end) : `(while ,$2 do ,$4)
-         (repetition) : $1
-         (repeat unblock) : `(repeat ,$2 until ,$3)
-         (if-stmt) : $1
-         (function-stmt) : $1
-         (set-list assign exp-list1) : `(global-assign ,$1 ,$3)
-         (binding) : $1)
+   (boolean (nil) : '(boolean nil)
+            (true) : '(boolean true)
+            (false) : '(boolean false))
 
-   (repetition (for name assign exp-list23 do block end) 
-               : `(for ,$2 ,$4 do ,$6)
-               (for name-list in exp-list1 do block end) 
-               : `(for ,$2 in ,$3 do ,$6))
-
-   (if-stmt (if exp then block) : `(if ,$2 then ,$3)
-            (if exp else block) : `(if ,$2 else ,$3)
-            (if exp then block else block) : `(if ,$2 then ,$3 else ,$4)
-            (if exp then block elseif-stmts) : `(if ,$2 then ,$3 ,$4))
-   
-   (elseif-stmts (elseif-stmt) : $1
-                 (elseif-stmt elseif-stmts) : `(begin ,$1 ,$2))
-
-   (elseif-stmt (elseif exp then block) : `(if ,$2 then ,$3)
-                (elseif exp then block else block) : `(if ,$2 then ,$3 else ,$4))
-
-   (binding (local name-list) : '(begin) ; nothing to do 
-	    (local name-list assign exp-list1) : `(local-assign ,$3 ,$4)
-	    (local function name funcbody) : `(local function ,$3 ,$4))
-
-   (func-name (dotted-name) : $1
-              (dotted-name colon name) : `(func-self-pass-in ,$1 ,$3))
-
-   (dotted-name (name) : $1
-                (dotted-name dot name) : `(dot-name ,$1 ,$3))
-
-   ;; TODO: add comment for name-list, what's it used for?
-   (name-list () : '()
-	      (name) : $1
-              (name-list dot name) : `(name-list ,$1 ,@$3))
-
-   (name (id) : $1
-         (sp-id) : $1)
-
-   (exp-list1 (exp) : $1
-              (exp-list1 comma exp) : `(begin ,$1 ,$3))
-
-   (exp-list23 (exp comma exp) : `(begin ,$1 ,$3)
-               (exp comma exp comma exp) : `(begin ,$1 ,$3 ,$5))
-
-   (exp (nil) : 'nil
-        (true) : 'true
-        (false) : 'false ; only nil and false are FALSE
-        (numbers) : $1
+   (var (number) : `(number ,$1)
         (string) : `(string ,$1)
-        (tri-dots) : $1
-        (function-stmt) : $1 ; function def could be expr
-        (prefix-exp) : $1
-        (table-constructor) : $1
-        (not exp) : `(not ,$2)
-        (hash prefix-exp) : `(hash ,$2)
-        (exp or exp) : `(or ,$1 ,$3)
-        (exp and exp) : `(and ,$1 ,$3)
-        (exp arith-compare exp) : `(,$2 ,$1 ,$3)
-        (exp concat exp) : `(concat ,$1 ,$3)
-        (exp arith-op exp) : `(,$2 ,$1 ,$3))
+        (boolean) : $1
+        (name) : $1)
 
-   (numbers (number) : `(number ,$1)
-            (minus number) : `(- ,$1)
-            (add number) : `(+ ,$1))
-   
-   (arith-compare (lt) : $1
-                  (leq) : $1
-                  (gt) : $1
-                  (geq) : $1
-                  (eq) : $1
-                  (neq) : $1)
+   (exp (exps) : $1
+        (var) : $1)
 
-   (arith-op (add) : $1
-             (minus) : $1
-             (multi) : $1
-             (div) : $1
-             (mod) : $1
-             (expt) : $1)
+   (exps (logic-exps) : $1
+         (string-exps) : $1
+         (arith-exps) : $1
+         (misc-exps) : $1)
 
-   (set-list (var) : $1
-             (set-list comma var) : `(,@$1 ,$3))
+   ;; Lua Precedence:
+   ;;     or
+   ;;     and
+   ;;     <     >     <=    >=    ~=    ==
+   ;;     ..
+   ;;     +     -
+   ;;     *     /     %
+   ;;     not   #     - (unary)
+   ;;     ^
 
-   (var (name) : `(variable ,$1)
-        (prefix-exp lbracket exp rbracket) : `(table-ref ,$1 ,$2)
-        (prefix-exp dot name) : `(dot-name ,$1 ,$3))
+   ;; for logic and comparison
+   (logic-exps (logic-exps logic-exp) : `(begin ,$1 ,$2)
+               (logic-exp) : $1)
+   (logic-exp (logic-exp or logic-term) : `(or ,$1 ,$3)
+              (logic-exp and logic-term) : `(and ,$1 ,$3)
+              (logic-term) : $1)
+   (logic-term (logic-term gt logic-val) : `(gt ,$1 ,$3)
+               (logic-term lt logic-val) : `(lt ,$1 ,$3)
+               (logic-term leq logic-val) : `(leq ,$1 ,$3)
+               (logic-term geq logic-val) : `(geq ,$1 ,$3)
+               (logic-term neq logic-val) : `(neq ,$1 ,$3)
+               (logic-term eq logic-val) : `(eq ,$1 ,$3)
+               (logic-val) : $1
+               (arith-exp) : $1)   
+   (logic-val (lparen logic-exp rparen) : $2
+              (var) : $1)
 
-   (prefix-exp (var) : $1
-               (function-call) : $1
-               (lparen exp rparen) : $2)
+   ;; for string
+   (string-exps (string concat string) : `(concat ,$1 ,$3)
+                (string) : `(string ,$1)
+                (exp) : $1)
+            
+   ;; for arithmatic
+   (arith-exps (arith-exps arith-exp) : `(begin ,$1 ,$2)
+               (arith-exp) : $1)
+   (arith-exp  (arith-exp add arith-term) : `(add ,$1 ,$3)
+               (arith-exp minus arith-term) : `(minus ,$1 ,$3)
+               (arith-term) : $1
+               (logic-exp) : $1)
+   (arith-term (arith-term multi arith-factor) : `(multi ,$1 ,$3)
+               (arith-term div arith-factor) : `(div ,$1 ,$3)
+               (arith-factor) : $1)
+   (arith-factor (lparen arith-exp rparen) : $2
+                 (var) : $1)
 
-   (function-call (prefix-exp args) : `(func-call ,$1 ,$2)
-                  (prefix-exp colon name args) : `(func-call ,$1 ,$3 ,$4))
-
-   (args (lparen rparen) : '(void-args)
-         (lparen exp-list1 rparen) : $2
-         (table-constructor) : `(args-with-table ,$1) ; just pass the table as arg
-         (string) : `(string ,$1))
-
-   (function-stmt (function funcname funcbody) : `(function ,$2 ,$3)
-                  (function funcbody) : `(function ,$2))
-
-   (funcname (dottedname) : $1
-             (dottedname colon name) : $1)
-
-   (dottedname (name) : $1
-               (dottedname dot name) : `(ref-from ,$1 ,$3))
-
-   (funcbody (params block end) : `(funcbody ,$1 ,$2))
-   
-   (params (lparen par-list rparen) : $2)
-
-   (par-list () : '(void-par-list)
-             (name-list) : $1
-             (tri-dots) : '(void-varlist) ; WTF?!
-             (name-list comma tri-dots) : `(varlist ,$1))
-
-   (table-constructor (lbrace rbrace) : '(table)
-                      (lbrace field-list rbrace) : `(table ,$2)
-                      (lbrace field-list comma rbrace) : `(table ,$2)
-                      (lbrace field-list semi-colon rbrace) : `(table ,$2))
-
-   (field-list (field) : $1
-               (field-list comma field) : `(field-list ,@$1 ,$3)
-               (field-list semi-colon field) : `(field-list ,@$1 ,$3))
-
-   ;; NOTE: is dot-name the same with table-bracket-ref
-   (field (exp) : $1
-          (name assign exp) : `(field-assign ,$1 ,$3)
-          (lbracket exp rbracket assign exp) : `(field-bracket-assign ,$2 ,$5))))
+   ;; for misc and unary operations
+   (misc-exps (misc-exps misc-exp) : `(begin ,$1 ,$2)
+              (misc-exp) : $1)
+   (misc-exp (not misc-exp) : `(not ,$2)
+             (hash misc-exp) : `(hash ,$2)
+             ;; NOTE: There's no '+number' notation in Lua! 
+             ;;       But '-number' is fine.
+             (minus misc-exp) : `(minus ,$2)
+             (misc-exp expt misc-exp) : `(expt ,$1 ,$3)
+             (exp) : $1)
+   ))
