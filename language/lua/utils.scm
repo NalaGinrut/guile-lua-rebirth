@@ -28,6 +28,8 @@
 	    port-source-location
 	    return
 	    ->
+            %>
+            debug-it
 	    pmatch/source
 	    
 	    new-stack
@@ -92,6 +94,13 @@
 
 (define-syntax-rule (-> (type arg ...))
   `(type ,arg ...))
+
+;; for debug
+(define (normal-compute func . args)
+  (apply func args))
+(define (debug-it func . args)
+  `(,(procedure-name func) ,@args))
+(define %> (make-parameter normal-compute))
 
 (define-syntax-rule (pmatch/source x clause ...)
   (let ((x x))

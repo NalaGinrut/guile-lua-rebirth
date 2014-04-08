@@ -26,7 +26,7 @@
   (-> (@ '(language lua impl) 'sym)))
 
 (define-syntax-rule (@impl sym arg ...)
-  (-> (apply (@implv sym) arg ...)))
+  (-> (%> (@implv sym) arg ...)))
 
 (define (lua-init)
   #t) ;; nothing to do yet.
@@ -70,9 +70,9 @@
     ((string ,x)
      (-> (const x)))
     ((variable ,x)
-     (lookup x e))
+     (%> lookup x e))
     ((store ,x ,v)
-     (store x (comp v e) e))
+     (%> store x (comp v e) e))
     ;; FIXME: we need lexical scope
     ((begin ,form)
      (comp form e))
