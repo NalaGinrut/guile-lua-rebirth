@@ -40,7 +40,7 @@
     id sp-id tri-dots
 
     ;; according to operations precedence
-    (left: or) 
+    (left: or)
     (left: and) 
     (left: lt gt leq geq neq eq)
     (right: concat)
@@ -59,7 +59,7 @@
 
    (stmt (chunk terminator) : `(begin $1))
 
-   (block (exp) : $1)
+   (block (exps) : $1)
 
    (name (id) : `(id ,$1))
 
@@ -72,23 +72,21 @@
         (boolean) : $1
         (name) : $1)
 
-   (exp (exps) : $1
-        (var) : $1)
-
-   (exps (logic-exps) : $1
-         (string-exps) : $1
+   (exps (misc-exps) : $1
          (arith-exps) : $1
-         (misc-exps) : $1)
-
-   ;; Lua Precedence:
-   ;;     or
-   ;;     and
-   ;;     <     >     <=    >=    ~=    ==
-   ;;     ..
-   ;;     +     -
-   ;;     *     /     %
-   ;;     not   #     - (unary)
-   ;;     ^
+         (string-exps) : $1
+         (logic-exps) : $1
+         (var) : $1)
+   
+   ;; Lua Precedence(from higher to lower):
+   ;;              ^
+   ;;          not  - (unary)
+   ;;          *   /
+   ;;          +   -
+   ;;          ..
+   ;;          <   >   <=  >=  ~=  ==
+   ;;          and
+   ;;          or
 
    ;; for logic and comparison
    (logic-exps (logic-exps logic-exp) : `(begin ,$1 ,$2)
@@ -102,30 +100,32 @@
                (logic-term geq logic-val) : `(geq ,$1 ,$3)
                (logic-term neq logic-val) : `(neq ,$1 ,$3)
                (logic-term eq logic-val) : `(eq ,$1 ,$3)
-               (logic-val) : $1
-               (arith-exp) : $1)   
+               (logic-val) : $1)
    (logic-val (lparen logic-exp rparen) : $2
+              (string-exps) : $1 
+              (arith-exps) : $1
+              (misc-exps) : $1
               (var) : $1)
 
    ;; for string
    (string-exps (string concat string) : `(concat ,$1 ,$3)
-                (string) : `(string ,$1)
-                (exp) : $1)
-            
+                (arith-exps) : $1
+                (misc-exps) : $1
+                (var) : $1)   ;; for misc and unary operations
+
    ;; for arithmatic
    (arith-exps (arith-exps arith-exp) : `(begin ,$1 ,$2)
                (arith-exp) : $1)
    (arith-exp  (arith-exp add arith-term) : `(add ,$1 ,$3)
                (arith-exp minus arith-term) : `(minus ,$1 ,$3)
-               (arith-term) : $1
-               (logic-exp) : $1)
+               (arith-term) : $1)
    (arith-term (arith-term multi arith-factor) : `(multi ,$1 ,$3)
                (arith-term div arith-factor) : `(div ,$1 ,$3)
                (arith-factor) : $1)
    (arith-factor (lparen arith-exp rparen) : $2
+                 (misc-exps) : $1
                  (var) : $1)
 
-   ;; for misc and unary operations
    (misc-exps (misc-exps misc-exp) : `(begin ,$1 ,$2)
               (misc-exp) : $1)
    (misc-exp (not misc-exp) : `(not ,$2)
@@ -134,5 +134,7 @@
              ;;       But '-number' is fine.
              (minus misc-exp) : `(minus ,$2)
              (misc-exp expt misc-exp) : `(expt ,$1 ,$3)
-             (exp) : $1)
+             (misc-val) : $1)
+   (misc-val (lparen misc-exp rparen) : $2
+             (var) : $1)
    ))

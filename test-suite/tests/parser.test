@@ -47,6 +47,13 @@
           (number 3))
          (number 4))
         (number 5)))
+    ("a+i < b/2+1"
+     . (lt (add (id "a") (id "i")) 
+           (add (div (id "b") (number 2))
+                (number 1))))
+    ("1+ false or 3" ; intended wrong evaluation, should be 1+false
+     . (or (add (number 1) (boolean false)) (number 3)))
+                             
     ))
       
 (define-syntax-rule (test-it name tests tests-name)
