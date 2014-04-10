@@ -227,7 +227,7 @@
               (error (string-append name ": Failed:") src (pick-out expect r)))))
        (else (error (string-append "Invalid case in " tests-name) t))))
    tests)
-  (format #t "* testing ~a case~:p...~%" (length tests)))
+  (format #t "* testing ~d case~:p...~%" (length tests)))
 
 (display "\n=== Lua lexer token tests ===\n")
 

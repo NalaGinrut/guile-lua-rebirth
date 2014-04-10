@@ -53,7 +53,20 @@
                 (number 1))))
     ("1+ false or 3" ; intended wrong evaluation, should be 1+false
      . (or (add (number 1) (boolean false)) (number 3)))
-                             
+    ("5+x^2*8"
+     . (add (number 5)
+            (multi 
+             (expt (id "x") (number 2))
+             (number 8))))
+    (" a < y and y <= z"
+     . (and (lt (id "a") (id "y"))
+            (leq (id "y") (id "z"))))
+    ("-x^2"
+     . (minus (expt (id "x") (number 2))))
+    ("x^y^z"
+     . (expt (id "x")
+             (expt (id "y") (id "z"))))
+    
     ))
       
 (define (test-it name tests tests-name)
@@ -66,7 +79,7 @@
               (error (string-append name ": Failed:") src (pick-out expect r)))))
        (else (error (string-append "Invalid case in " tests-name) t))))
    tests)
-  (format #t "* testing ~a case~:p...~%" (length tests)))
+  (format #t "* testing ~d case~:p...~%" (length tests)))
 
 (display "\n=== Lua parser syntax tests ===\n")
 
