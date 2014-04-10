@@ -217,7 +217,7 @@
      . (return function end if then elseif else true false nil or and
 	do while repeat until local for break in not))))
 
-(define-syntax-rule (test-it name tests tests-name)
+(define (test-it name tests tests-name)
   (for-each
    (lambda (t)
      (match t
@@ -226,7 +226,8 @@
           (or (equal? r expect)
               (error (string-append name ": Failed:") src (pick-out expect r)))))
        (else (error (string-append "Invalid case in " tests-name) t))))
-   tests))
+   tests)
+  (format #t "* testing ~a case~:p...~%" (length tests)))
 
 (display "\n=== Lua lexer token tests ===\n")
 
