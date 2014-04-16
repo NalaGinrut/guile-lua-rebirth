@@ -50,84 +50,108 @@
     (right: expt)
     (right: assign))    
    
-   (program: (chunk) : $1
-             (*eoi*) : *eof-object*)
+   (program (chunk) : $1
+            (*eoi*) : *eof-object*)
    
    (chunk (block) : $1)
 
-   (terminator (semi-colon) : 'semi-colon) ; FIXME: accept semi-colon
+   (terminator () : '()
+               (semi-colon) : '()) ; FIXME: accept semi-colon
 
-   (stmt (chunk terminator) : `(begin $1))
+   ;;(stmt (chunk terminator) : `(begin $1))
 
-   (block (exps) : $1)
+   (block (scope stat-list) : `(scope ,@$1 ,$2)
+          (scope stat-list last-stat terminator) : `(scope ,@$1 ,$2 ,$3))
+
+   (scope () : '()
+          (scope stat-list binding terminator) : `(scope ,$1 ,$2))
+          
+   (stat-list (stat) : $1 ; FIXME: is this correct grammar?
+              (stat-list stat terminator) : `(begin ,$1 ,$2))
+
+   (stat (set-list assign exp-list1) : `(assign ,$1 ,$3)
+         ;; NOTE: Lua grammar doesn't accept exp directly,
+         ;;       you have to use assign or function on exp,
+         ;;       say, a=1+2 or print(1+2), 
+         ;;       1+2 will cause a syntax error.
+         ;; FIXME:
+         ;;       However, we need to test the parsing of exp easier,
+         ;;       so we add this syntax. It's susppended whether
+         ;;       we should keep it when GLR is mature.         
+         (exp) : $1)
+
+   (set-list (var) : $1
+             ;; Multi values
+             (set-list comma var) : `(values ,@$1 ,$3))
+
+   (exp-list1 (exp) : $1
+              (exp-list1 comma exp) : `(begin ,$1 ,$3))
+
+   (last-stat () : '(begin))
+   (binding () : '(begin))
 
    (name (id) : `(id ,$1))
 
-   (boolean (nil) : '(boolean nil)
-            (true) : '(boolean true)
+   (boolean (true) : '(boolean true)
             (false) : '(boolean false))
 
    (var (number) : `(number ,$1)
         (string) : `(string ,$1)
         (boolean) : $1
+        (nil) : '(marker nil)
         (name) : $1)
 
-   (exps (misc-exps) : $1
-         (arith-exps) : $1
-         (string-exps) : $1
-         (logic-exps) : $1
-         (var) : $1)
+   (exp (exp comma exp) : `(begin ,$1 ,$3)
+        (misc-exp) : $1
+        (arith-exp) : $1
+        (string-exp) : $1
+        (logic-exp) : $1
+        (var) : $1)
    
    ;; Lua Precedence(from higher to lower):
    ;;              ^
    ;;          not  - (unary)
    ;;          *   /
-   ;;          +   -
+   ;;          +   -p
    ;;          ..
    ;;          <   >   <=  >=  ~=  ==
    ;;          and
    ;;          or
 
    ;; for logic and comparison
-   (logic-exps (logic-exps logic-exp) : `(begin ,$1 ,$2)
-               (logic-exp) : $1)
-   (logic-exp (logic-exp or logic-term) : `(or ,$1 ,$3)
-              (logic-exp and logic-term) : `(and ,$1 ,$3)
+   (logic-exp (logic-exp or logic-exp) : `(or ,$1 ,$3)
+              (logic-exp and logic-exp) : `(and ,$1 ,$3)
               (logic-term) : $1)
-   (logic-term (logic-term gt logic-val) : `(gt ,$1 ,$3)
-               (logic-term lt logic-val) : `(lt ,$1 ,$3)
-               (logic-term leq logic-val) : `(leq ,$1 ,$3)
-               (logic-term geq logic-val) : `(geq ,$1 ,$3)
-               (logic-term neq logic-val) : `(neq ,$1 ,$3)
-               (logic-term eq logic-val) : `(eq ,$1 ,$3)
+   (logic-term (logic-term gt logic-term) : `(gt ,$1 ,$3)
+               (logic-term lt logic-term) : `(lt ,$1 ,$3)
+               (logic-term leq logic-term) : `(leq ,$1 ,$3)
+               (logic-term geq logic-term) : `(geq ,$1 ,$3)
+               (logic-term neq logic-term) : `(neq ,$1 ,$3)
+               (logic-term eq logic-term) : `(eq ,$1 ,$3)
                (logic-val) : $1)
    (logic-val (lparen logic-exp rparen) : $2
-              (string-exps) : $1 
-              (arith-exps) : $1
-              (misc-exps) : $1
+              (string-exp) : $1 
+              (arith-exp) : $1
+              (misc-exp) : $1
               (var) : $1)
 
    ;; for string
-   (string-exps (string concat string) : `(concat ,$1 ,$3)
-                (arith-exps) : $1
-                (misc-exps) : $1
-                (var) : $1)   ;; for misc and unary operations
+   (string-exp (string concat string) : `(concat ,$1 ,$3)
+               (arith-exp) : $1
+               (misc-exp) : $1
+               (var) : $1)   ;; for misc and unary operations
 
    ;; for arithmatic
-   (arith-exps (arith-exps arith-exp) : `(begin ,$1 ,$2)
-               (arith-exp) : $1)
-   (arith-exp  (arith-exp add arith-term) : `(add ,$1 ,$3)
-               (arith-exp minus arith-term) : `(minus ,$1 ,$3)
+   (arith-exp  (arith-exp add arith-exp) : `(add ,$1 ,$3)
+               (arith-exp minus arith-exp) : `(minus ,$1 ,$3)
                (arith-term) : $1)
-   (arith-term (arith-term multi arith-factor) : `(multi ,$1 ,$3)
-               (arith-term div arith-factor) : `(div ,$1 ,$3)
+   (arith-term (arith-term multi arith-term) : `(multi ,$1 ,$3)
+               (arith-term div arith-term) : `(div ,$1 ,$3)
                (arith-factor) : $1)
    (arith-factor (lparen arith-exp rparen) : $2
-                 (misc-exps) : $1
+                 (misc-exp) : $1
                  (var) : $1)
 
-   (misc-exps (misc-exps misc-exp) : `(begin ,$1 ,$2)
-              (misc-exp) : $1)
    (misc-exp (not misc-exp) : `(not ,$2)
              (hash misc-exp) : `(hash ,$2)
              ;; NOTE: There's no '+number' notation in Lua! 
