@@ -28,7 +28,7 @@
 (define-syntax-rule (pick-out a b)
   (for-each 
    (lambda (x y)
-     (format #t "~a~t===~t~a~t -> ~a~%" x y (eqv? x y)))
+     (format #t "~a~t===~t~a~t -> ~a~%" x y (equal? x y)))
    a b))
 
 (define *precedence-tests*
@@ -68,13 +68,30 @@
              (expt (id "y") (id "z"))))
     
     ))
-      
+
+(define *expr-tests*
+  `(("1+2,3+4"
+     . (begin (add (number 1) (number 2)) (add (number 3) (number 4))))
+    ("1+2,3+4 and false,true"
+     . (begin (add (number 1) (number 2)) 
+              (begin (and (add (number 3) (number 4))
+                          (boolean false))
+                     (boolean true))))
+    ("nil" . (marker nil))
+    ("a=1+2" . (assign (id "a") (add (number 1) (number 2))) )
+    
+    ))
+
+;; This is useful to drop `scope' symbol which should exist
+;; in every header of statment.      
+(define get-stat cadr)
+
 (define (test-it name tests tests-name)
   (for-each
    (lambda (t)
      (match t
        ((src . expect)
-        (let ((r (call-with-input-string src read-lua)))
+        (let ((r (get-stat (call-with-input-string src read-lua))))
           (or (equal? r expect)
               (error (string-append name ": Failed:") src (pick-out expect r)))))
        (else (error (string-append "Invalid case in " tests-name) t))))
@@ -87,6 +104,10 @@
 
   (pass-if "precedence tests"
     (test-it "precedence tests" *precedence-tests* "*precedence-tests*")
+    #t)
+
+  (pass-if "expr tests"
+    (test-it "expr tests" *expr-tests* "*expr-tests*")
     #t)
   )
 
