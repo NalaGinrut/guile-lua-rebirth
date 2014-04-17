@@ -53,23 +53,28 @@
    (program (chunk) : $1
             (*eoi*) : *eof-object*)
    
+   ;; The *unit-of-compilation* of Lua is called a chunk.
+   ;; Syntactically, a chunk is simply a block:
    (chunk (block) : $1)
 
    (terminator () : '()
                (semi-colon) : '()) ; FIXME: accept semi-colon
 
-   ;;(stmt (chunk terminator) : `(begin $1))
-
+   ;; A block is a list of statements, which are executed sequentially
    (block (scope stat-list) : `(scope ,@$1 ,$2)
-          (scope stat-list last-stat terminator) : `(scope ,@$1 ,$2 ,$3))
+          (scope stat-list last-stat terminator) : `(scope ,@$1 ,@$2 ,$3))
 
    (scope () : '()
-          (scope stat-list binding terminator) : `(scope ,$1 ,$2))
+          (scope stat-list binding terminator) : `(scope ,$1 ,@$2))
           
    (stat-list (stat) : $1 ; FIXME: is this correct grammar?
               (stat-list stat terminator) : `(begin ,$1 ,$2))
 
-   (stat (set-list assign exp-list1) : `(assign ,$1 ,$3)
+   (stat ;; A block can be explicitly delimited to produce a single statement:
+         (do block end) : $2
+         (while exp do block end) : `(while ,$1 do ,$4)
+         (repeat block until exp) : `(while (not ,$3) ,$1) ;; FIXME
+         (var-list assign exp-list1) : `(assign ,$1 ,$3)
          ;; NOTE: Lua grammar doesn't accept exp directly,
          ;;       you have to use assign or function on exp,
          ;;       say, a=1+2 or print(1+2), 
@@ -80,21 +85,36 @@
          ;;       we should keep it when GLR is mature.         
          (exp) : $1)
 
-   (set-list (var) : $1
-             ;; Multi values
-             (set-list comma var) : `(values ,@$1 ,$3))
+   (var-list (var) : $1
+             ;; Multi values binding
+             ;; NOTE:
+             ;; (FIXME: this note should be moved to compile-tree-il.scm)
+             ;; ** Before the assignment, the list of values is adjusted
+             ;;    to the length of the list of variables.
+             ;; There're three cases for multi values:
+             ;; 1. more values than needed, excess values are thrown away.
+             ;; 2. fewer, the list is extended with as many nil's as needed.
+             ;; 3. If the list of expressions ends with a function call,
+             ;;    then all values returned by that call enter the list
+             ;;    of values, before the adjustment
+             ;;    (except when the call is enclosed in parentheses).
+             (var-list comma var) : `(mul-vals ,@$1 ,$3))
+   
+   (exp-list (exp) : $1
+             ;; Multi values returning
+             (exp-list comma exp) : `(mul-exps ,@$1 ,$3))
 
-   (exp-list1 (exp) : $1
-              (exp-list1 comma exp) : `(begin ,$1 ,$3))
-
-   (last-stat () : '(begin))
-   (binding () : '(begin))
+   (last-stat () : '())
+   (binding () : '())
 
    (name (id) : `(id ,$1))
 
    (boolean (true) : '(boolean true)
             (false) : '(boolean false))
 
+   ;; Variables are places that store values. 
+   ;; There are three kinds of variables in Lua:
+   ;; global variables, local variables, and table fields.
    (var (number) : `(number ,$1)
         (string) : `(string ,$1)
         (boolean) : $1
