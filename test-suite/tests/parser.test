@@ -70,18 +70,58 @@
     ))
 
 (define *expr-tests*
-  `(("1+2,3+4"
-     . (begin (add (number 1) (number 2)) (add (number 3) (number 4))))
-    ("1+2,3+4 and false,true"
-     . (begin (add (number 1) (number 2)) 
-              (begin (and (add (number 3) (number 4))
-                          (boolean false))
-                     (boolean true))))
+  `(;; TODO:
+    ;; The expr shouldn't be splited by comma, but asssign does, so modify
+    ;; these tests to proper one.
+    ;;("1+2,3+4"
+    ;; . (begin (add (number 1) (number 2)) (add (number 3) (number 4))))
+    ;;("1+2,3+4 and false,true"
+    ;; . (begin (add (number 1) (number 2)) 
+    ;;          (begin (and (add (number 3) (number 4))
+    ;;                      (boolean false))
+    ;;                 (boolean true))))
+    ("1+2+4*3-2-1-5/8"
+     . (minus 
+        (minus 
+         (minus 
+          (add 
+           (add (number 1) 
+                (number 2))
+           (multi (number 4) (number 3)))
+          (number 2))
+         (number 1))
+        (div (number 5) 
+             (number 8))))
     ("nil" . (marker nil))
-    ("a=1+2" . (assign (id "a") (add (number 1) (number 2))) )
-    
+    ("a=1+2" . (assign (id "a") (add (number 1) (number 2))))
+   ;; ("a = b + c
+     ;; (print or io.write)('done')"
+     ;; NOTE: According to the manual 5.2
+     ;; The current parser always sees such constructions in the first way,
+     ;; interpreting the open parenthesis as the start of the arguments to a call. 
+     ;;. ())
+    ("\"this is string\"" . (string "this is string"))
+    ("'this is string'" . (string "this is string"))
     ))
 
+;; NOTE: Part of these tests are fake since statment can't be exp.
+;;       But we need this extra grammar for easier testing.
+(define *cond-tests*
+  `(("if true then false end"
+     . (if (boolean true) then (scope (boolean false))))
+    ("if 1 then 2 elseif 3 then 4 end"
+     . (if (number 1) 
+           then (scope (number 2))
+           elseif (number 3)
+           then (scope (number 4))))
+    ("if 1 then 2 elseif 3 then 4 elseif 5 then 6 end"
+     . (if (number 1) 
+           then (scope (number 2))
+           elseif (number 3)
+           then(scope (number 4))
+           elseif (number 5)
+           then (scope (number 6))))
+    ))
 ;; This is useful to drop `scope' symbol which should exist
 ;; in every header of statment.      
 (define get-stat cadr)
