@@ -1,0 +1,37 @@
+* Tables
+ ** Tables has to be boxed. Since Lua permits this:
+  a={}
+  b=a --> b and a shared the same object
+  a=nil --> b is nil too
+  This may not be implemented with assoc-list in Scheme directly, a boxed one
+  is an intuitive way to think about.
+
+ ** You can assign nil to a table field to delete it, which is similar to hashtable
+    in Scheme. So that's possibly one of the implementation.
+    *** It's almost the same with table.remove, but not only set nil, additionally,
+    it moves down other elements to close space and decrements the size of the
+    array. When called without a position, it removes the last element of the
+    array.
+    I think hash-remove! is enough.
+    But it's better the check the key for eq? eqv? equal? for better performance.
+
+ ** If you use table as dictionary, say:
+    a={name='john', age=15}
+    print(#a) --> 0
+    You can never get the size of table by # which is actually `table.getn'
+    The only way is to use a loop and count it.    
+
+    But if you use table as array, say:
+    a={1,2,3}
+    You can use # for it:
+    print(#a) --> 3
+
+    So this should be considered in the compile-tree-il.
+
+* Assignment
+  ** Every `(assign ...) node should be constrained to the current scope.
+
+
+* Globals
+  **  An assignment to a global variable x = val is equivalent to the assignment
+      _ENV.x = val
