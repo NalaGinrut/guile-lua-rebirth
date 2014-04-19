@@ -49,14 +49,12 @@
     (right: not hash)
     (right: expt)
     (right: assign))    
-   
-   (program (chunk) : $1
-            (*eoi*) : *eof-object*)
-   
-   ;; The *unit-of-compilation* of Lua is called a chunk.
-   ;; Syntactically, a chunk is simply a block:
-   (chunk (block) : $1)
 
+   ;; The *unit-of-compilation* of Lua is called a chunk.
+   ;; Syntactically, a chunk is simply a block:   
+   (chunk (block) : $1
+          (*eoi*) : *eof-object*)
+   
    (terminator () : '()
                (semi-colon) : '()) ; FIXME: accept semi-colon
 
@@ -73,8 +71,9 @@
    (stat ;; A block can be explicitly delimited to produce a single statement:
          (do block end) : $2
          (while exp do block end) : `(while ,$1 do ,$4)
-         (repeat block until exp) : `(while (not ,$3) ,$1) ;; FIXME
-         (var-list assign exp-list1) : `(assign ,$1 ,$3)
+         (repeatition do block end) : `(rep ,$1 ,$3)
+         (if conds end) : `(if ,@$2)
+         (var-list assign exp-list) : `(assign ,$1 ,$3)
          ;; NOTE: Lua grammar doesn't accept exp directly,
          ;;       you have to use assign or function on exp,
          ;;       say, a=1+2 or print(1+2), 
@@ -85,6 +84,17 @@
          ;;       we should keep it when GLR is mature.         
          (exp) : $1)
 
+   (repeatition (for name assign range) : `(assign ,$2 ,$4)
+                (for name-list in exp-list) : `(assign ,$2 ,$4))
+
+   (conds (cond-list) : $1
+          (cond-list else block) : `(,@$1 else ,@$3))
+   
+   (cond-list (cond) : $1
+              (cond-list elseif cond) : `(,@$1 elseif ,@$3))
+   
+   (cond (exp then block) : `(,$1 then ,$3))
+             
    (var-list (var) : $1
              ;; Multi values binding
              ;; NOTE:
@@ -98,19 +108,24 @@
              ;;    then all values returned by that call enter the list
              ;;    of values, before the adjustment
              ;;    (except when the call is enclosed in parentheses).
-             (var-list comma var) : `(mul-vals ,@$1 ,$3))
+             (var-list comma var) : `(mul-vals ,$1 ,$3))
    
    (exp-list (exp) : $1
              ;; Multi values returning
-             (exp-list comma exp) : `(mul-exps ,@$1 ,$3))
+             (exp-list comma exp) : `(multi-exps ,$1 ,$3))
+
+   (range (exp comma exp) : `(range ,$1 ,$3)
+          (exp comma exp comma exp) : `(range ,$1 ,$3 ,$5))
 
    (last-stat () : '())
    (binding () : '())
 
-   (name (id) : `(id ,$1))
+   (name-list (name) : $1
+              ;; FIXME: Shouldn't it be 'multi-vals ?
+              (dotted-name comma name) : `(multi-names ,$1 ,$3))
 
-   (boolean (true) : '(boolean true)
-            (false) : '(boolean false))
+   (dotted-name (name) : $1
+                (dotted-name dot name) : '(not-yet))
 
    ;; Variables are places that store values. 
    ;; There are three kinds of variables in Lua:
@@ -121,8 +136,12 @@
         (nil) : '(marker nil)
         (name) : $1)
 
-   (exp (exp comma exp) : `(begin ,$1 ,$3)
-        (misc-exp) : $1
+   (name (id) : `(id ,$1))
+
+   (boolean (true) : '(boolean true)
+            (false) : '(boolean false))
+
+   (exp (misc-exp) : $1
         (arith-exp) : $1
         (string-exp) : $1
         (logic-exp) : $1
