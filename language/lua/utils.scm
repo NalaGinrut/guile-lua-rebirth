@@ -15,6 +15,7 @@
 
 (define-module (language lua utils)
   #:use-module (ice-9 q)
+  #:use-module (srfi srfi-1)
   #:use-module (system base language)
   #:use-module (system base compile)
   #:use-module (system base lalr)
@@ -46,7 +47,8 @@
 	    queue-empty?
 	    
 	    hash-keys
-	    
+	    range
+
 	    make-compiler
 	    make-file-compiler
 	    make-token-checker))
@@ -127,6 +129,9 @@
 
 (define (hash-keys ht)
   (hash-map->list (lambda (k v) k) ht))
+
+(define* (range from to #:optional (step 1))
+  (iota (- to from) from step))
 
 ;; debug utils
 
