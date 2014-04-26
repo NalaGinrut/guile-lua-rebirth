@@ -106,6 +106,7 @@
 
 ;; NOTE: Part of these tests are fake since statment can't be exp.
 ;;       But we need this extra grammar for easier testing.
+;; FIXME: maybe remove exp as statment after mature.
 (define *cond-tests*
   `(("if true then false end"
      . (if (boolean true) then (scope (boolean false))))
@@ -149,5 +150,9 @@
   (pass-if "expr tests"
     (test-it "expr tests" *expr-tests* "*expr-tests*")
     #t)
+
+  (pass-if "cond tests"
+    (test-it "cond tests" *cond-tests* "*cond-tests*")
+    #t) 
   )
 
