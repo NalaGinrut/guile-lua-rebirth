@@ -29,6 +29,7 @@
 	    port-source-location
 	    return
 	    ->
+            ->fixop
             %>
             debug-it
 	    pmatch/source
@@ -96,6 +97,9 @@
 
 (define-syntax-rule (-> (type arg ...))
   `(type ,arg ...))
+
+(define-syntax-rule (->fixop l1 l2)
+  `(,(car l2) ,l1 ,(cadr l2)))
 
 ;; for debug
 (define (normal-compute func . args)
