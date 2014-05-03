@@ -46,9 +46,13 @@
     (right: concat)
     (left: add minus)
     (left: multi div mod)
-    (right: not hash)
+    (nonassoc: not hash uminus)
     (right: expt)
     (right: assign))    
+
+   ;; NOTE: This is a LALR grammar, which means it has to be constrained
+   ;;       by LALR principle. Maybe looks strange from the common grammar.
+   ;;       Any problems could be solved in Dragon Book.
 
    ;; The *unit-of-compilation* of Lua is called a chunk.
    ;; Syntactically, a chunk is simply a block:   
@@ -141,11 +145,13 @@
    (boolean (true) : '(boolean true)
             (false) : '(boolean false))
 
-   (exp (misc-exp) : $1
-        (arith-exp) : $1
-        (string-exp) : $1
-        (logic-exp) : $1
-        (var) : $1)
+   ;; NOTE:
+   ;; Only logic-exp is needed here, for eliminating confilicts.
+   ;; Because LALR can't be reduced from multi terminats. 
+   (exp ;;(misc-exp) : $1
+        ;;(arith-exp) : $1
+        ;;(string-exp) : $1
+        (logic-exp) : $1)
    
    ;; Lua Precedence(from higher to lower):
    ;;              ^
@@ -158,44 +164,38 @@
    ;;          or
 
    ;; for logic and comparison
-   (logic-exp (logic-exp or logic-exp) : `(or ,$1 ,$3)
-              (logic-exp and logic-exp) : `(and ,$1 ,$3)
+   (logic-exp (logic-exp or logic-term) : `(or ,$1 ,$3)
+              (logic-exp and logic-term) : `(and ,$1 ,$3)
               (logic-term) : $1)
-   (logic-term (logic-term gt logic-term) : `(gt ,$1 ,$3)
-               (logic-term lt logic-term) : `(lt ,$1 ,$3)
-               (logic-term leq logic-term) : `(leq ,$1 ,$3)
-               (logic-term geq logic-term) : `(geq ,$1 ,$3)
-               (logic-term neq logic-term) : `(neq ,$1 ,$3)
-               (logic-term eq logic-term) : `(eq ,$1 ,$3)
+   (logic-term (logic-term gt logic-val) : `(gt ,$1 ,$3)
+               (logic-term lt logic-val) : `(lt ,$1 ,$3)
+               (logic-term leq logic-val) : `(leq ,$1 ,$3)
+               (logic-term geq logic-val) : `(geq ,$1 ,$3)
+               (logic-term neq logic-val) : `(neq ,$1 ,$3)
+               (logic-term eq logic-val) : `(eq ,$1 ,$3)
                (logic-val) : $1)
    (logic-val (lparen logic-exp rparen) : $2
-              (string-exp) : $1 
-              (arith-exp) : $1
-              (misc-exp) : $1
-              (var) : $1)
+              (string-exp) : $1)
 
    ;; for string
    (string-exp (string concat string) : `(concat ,$1 ,$3)
-               (arith-exp) : $1
-               (misc-exp) : $1
-               (var) : $1)   ;; for misc and unary operations
+               (arith-exp) : $1)
 
    ;; for arithmatic
-   (arith-exp  (arith-exp add arith-exp) : `(add ,$1 ,$3)
-               (arith-exp minus arith-exp) : `(minus ,$1 ,$3)
+   (arith-exp  (arith-exp add arith-term) : `(add ,$1 ,$3)
+               (arith-exp minus arith-term) : `(minus ,$1 ,$3)
                (arith-term) : $1)
-   (arith-term (arith-term multi arith-term) : `(multi ,$1 ,$3)
-               (arith-term div arith-term) : `(div ,$1 ,$3)
+   (arith-term (arith-term multi arith-factor) : `(multi ,$1 ,$3)
+               (arith-term div arith-factor) : `(div ,$1 ,$3)
                (arith-factor) : $1)
    (arith-factor (lparen arith-exp rparen) : $2
-                 (misc-exp) : $1
-                 (var) : $1)
+                 (misc-exp) : $1)
 
-   (misc-exp (not misc-exp) : `(not ,$2)
-             (hash misc-exp) : `(hash ,$2)
+   (misc-exp (not misc-exp (prec: not)) : `(not ,$2)
+             (hash misc-exp (prec: hash)) : `(hash ,$2)
              ;; NOTE: There's no '+number' notation in Lua! 
-             ;;       But '-number' is fine.
-             (minus misc-exp) : `(minus ,$2)
+             ;;       But there is '-number'.
+             (uminus misc-exp (prec: uminus)) : `(uminus ,$2)
              (misc-exp expt misc-exp) : `(expt ,$1 ,$3)
              (misc-val) : $1)
    (misc-val (lparen misc-exp rparen) : $2

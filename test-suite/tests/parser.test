@@ -62,7 +62,7 @@
      . (and (lt (id "a") (id "y"))
             (leq (id "y") (id "z"))))
     ("-x^2"
-     . (minus (expt (id "x") (number 2))))
+     . (uminus (expt (id "x") (number 2))))
     ("x^y^z"
      . (expt (id "x")
              (expt (id "y") (id "z"))))
@@ -123,21 +123,24 @@
            elseif (number 5)
            then (scope (number 6))))
     ))
+
 ;; This is useful to drop `scope' symbol which should exist
 ;; in every header of statment.      
 (define get-stat cadr)
 
 (define (test-it name tests tests-name)
+  (define len (length tests))
   (for-each
-   (lambda (t)
+   (lambda (t i)
+     ;;(display i)(newline)
      (match t
        ((src . expect)
         (let ((r (get-stat (call-with-input-string src read-lua))))
           (or (equal? r expect)
-              (error (string-append name ": Failed:") src (pick-out expect r)))))
-       (else (error (string-append "Invalid case in " tests-name) t))))
-   tests)
-  (format #t "* testing ~d case~:p...~%" (length tests)))
+              (error (format #f "~a[~d]: Failed: ~a~%%%%~%~a" name i src (pick-out expect r))))))
+       (else (error (format #f "Invalid case in ~a[~d]" tests-name i) t))))
+   tests (iota len))
+  (format #t "* testing ~d case~:p...~%" len))
 
 (display "\n=== Lua parser syntax tests ===\n")
 

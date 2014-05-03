@@ -52,6 +52,8 @@
     ("nil" . (nil))
     ("\"this is string\"" . (string))
     ("'this is string'" . (string))
+    ("1- -2" . (number minus uminus number))
+    ("1--2" . (number))
     ))
 
 (define *function-define-tests*

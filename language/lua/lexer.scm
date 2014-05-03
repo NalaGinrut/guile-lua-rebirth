@@ -82,8 +82,11 @@
 (define-syntax-rule (maybe-op-sign? c)
   (or (is-op-sign1? c) (is-op-sign0? c)))
 
+;; BUG
+;; FIXME: Should pass "1+ -1" and "1+-1"
 (define-syntax-rule (maybe-op-stop? c last)
   (cond
+   ;;((is-delimiter? c) #t)
    ((is-op-sign0? last)
     (not (is-op-sign0? c)))
    ((is-op-sign1? last)
@@ -119,6 +122,13 @@
   (and (not (null? lst))  
        (assoc-ref *all-op* (list->string (reverse lst)))))
 
+(define last-token 'begin)
+
+(define (is-uminus? c port)
+  (and (char=? c #\-)
+       ;;(display last-token)(newline)
+       (memq last-token '(punc op begin))))
+
 (define (is-op? c port)
   (define (check port lst)
     (let lp((l lst) (r '()))
@@ -135,12 +145,19 @@
         #f))))
   (cond
    ((maybe-op-sign? c)
-    (case c
-      ((#\o) (check port '(#\o #\r)))
-      ((#\a) (check port '(#\a #\n #\d)))
-      ((#\n) (check port '(#\n #\o #\t)))
-      (else  ; now it must be an op anyway, maybe invalid, but impossible not
-       (get-op port))))
+    (cond
+     ((char=? c #\o) (check port '(#\o #\r)))
+     ((char=? c #\a) (check port '(#\a #\n #\d)))
+     ((char=? c #\n) (check port '(#\n #\o #\t)))
+     ((is-comment? c port)
+      (read-char port) ; skip #\-
+      (skip-lua-comment port)
+      'comment) ; -- is start of comment
+     ((is-uminus? c port)
+      (read-char port) ; skip #\-
+      'uminus)
+     (else  ; now it must be an op anyway, maybe invalid, but impossible not
+      (get-op port))))
    (else #f)))
 
 (define (get-op port)
@@ -218,6 +235,14 @@
         (lex-error "String must be ended with \" or '" 
                    (port-source-location port) #f)
         str))) ; return the string
+
+(define (is-comment? c port)
+  (cond
+   ((char=? c #\-)
+    (read-char port) ; skip #\-
+    (or (char=? (peek-char port) #\-)
+        (not (unread-char c port))))
+   (else #f)))
 
 (define (skip-block-comment port)
   (let ((c0 (read-char port)) ; first #\[
@@ -298,16 +323,20 @@
      ((eof-object? c) '*eoi*)
      ((is-whitespace? c)
       (read-char port)
+      ;; NOTE: don't memorize whitespace to last-token!!!
       (next-token port))
      ((is-puctuation? c)
       => (lambda (punc)
            (read-char port)
+           (set! last-token 'punc)
            (return port punc #f)))
      ((is-digit? c) 
       (let ((num (read-lua-number port)))
+        (set! last-token 'number)
         (return port 'number num))) ; it's number
      ((member c '(#\" #\'))
       (let ((str (read-lua-string port)))
+        (set! last-token 'string)
         (return port 'string str))) ; it's string
      ((eqv? c #\.) ; check if . or .. or ...
       (read-char port)
@@ -318,23 +347,21 @@
           (cond
            ((eqv? (peek-char port) #\.)
             (read-char port)
+            (set! last-token 'tri-dots)
             (return port 'tri-dots #f)) ; tri-dot ...
            ;; FIXME: should we consider to avoid four dots here?
-           (else (return port 'concat #f)))) ; concat ..
+           (else
+            (set! last-token 'concat)
+            (return port 'concat #f)))) ; concat ..
          (else (return port 'dot #f))))) ; dot .
      ((is-op? c port)
       => (lambda (op)
-	   (return port op #f)))
-     ((char=? c #\-)
-      (read-char port) ; skip #\-
-      (cond
-       ((char=? (peek-char port) #\-)
-        (read-char port) ; skip the second #\-
-        (skip-lua-comment port)
-        (next-token port)) ; -- is comment
-       ((is-digit? (peek-char port))
-        (- (read-lua-number port))) ; it's negtive number
-       (lex-error "unexpected symbol near '-'" (port-source-location port) #f)))
+           (cond
+            ((eq? op 'comment)
+             (next-token port)) ; comment
+            (else
+             (set! last-token 'op)
+             (return port op #f)))))
      ((member c '(#\] #\@)) ; maybe comment
       (read-char port) ; skip #\] or #\@
       (cond
@@ -351,10 +378,11 @@
         (return port (punc->symbol c) #f)))) ; return the punc as token
     (else
      (cond
-      ((eof-object? c) '*eoi*)
+      ;;((eof-object? c) '*eoi*)
       ((is-id-head? c)
        (receive (cat val)
            (read-lua-identifier port)
+         (set! last-token 'id)
          (return port cat val)))
       (else (lex-error "Invalid token!" (port-source-location port) c)))))))
 
