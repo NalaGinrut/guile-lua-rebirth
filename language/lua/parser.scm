@@ -38,17 +38,22 @@
 
     ;; misc
     id sp-id tri-dots
+    
+    or and lt gt leq geq neq eq concat
+    add minus multi div mod not hash uminus expt assign)
 
+    ;; NOTE: We handled the correct precedence manually in BNF, so we don't need
+    ;;       to specify it here.
     ;; according to operations precedence
-    (left: or)
-    (left: and) 
-    (left: lt gt leq geq neq eq)
-    (right: concat)
-    (left: add minus)
-    (left: multi div mod)
-    (nonassoc: not hash uminus)
-    (right: expt)
-    (right: assign))    
+    ;;(left: or)
+    ;;(left: and) 
+    ;;(left: lt gt leq geq neq eq)
+    ;;(right: concat)
+    ;;(left: add minus)
+    ;;(left: multi div mod)
+    ;;(nonassoc: not hash uminus)
+    ;;(right: expt)
+    ;;(right: assign))
 
    ;; NOTE: This is a LALR grammar, which means it has to be constrained
    ;;       by LALR principle. Maybe looks strange from the common grammar.
