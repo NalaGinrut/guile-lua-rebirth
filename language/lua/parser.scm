@@ -56,7 +56,7 @@
     ;;(right: assign))
 
    ;; NOTE: This is a LALR grammar, which means it has to be constrained
-   ;;       by LALR principle. Maybe looks strange from the common grammar.
+   ;;       by bottom-up principle. Maybe looks strange from the common grammar.
    ;;       Any problems could be solved in Dragon Book.
 
    ;; The *unit-of-compilation* of Lua is called a chunk.
@@ -64,8 +64,8 @@
    (chunk (block) : $1
           (*eoi*) : *eof-object*)
    
-   (terminator () : '()
-               (semi-colon) : '()) ; FIXME: accept semi-colon
+   (terminator (semi-colon) : '() ; FIXME: accept semi-colon
+               () : '())
 
    ;; A block is a list of statements, which are executed sequentially
    (block (scope stat-list) : `(scope ,@$1 ,$2)
@@ -83,6 +83,8 @@
          (repeatition do block end) : `(rep ,$1 ,$3)
          (if conds end) : `(if ,@$2)
          (var-list assign exp-list) : `(assign ,$1 ,$3)
+         (function func-name func-body) : `(func ,$1 ,$2)
+         (func-call) : $1
          ;; NOTE: Lua grammar doesn't accept exp directly,
          ;;       you have to use assign or function on exp,
          ;;       say, a=1+2 or print(1+2), 
@@ -98,7 +100,7 @@
 
    (conds (cond-list) : $1
           (cond-list else block) : `(,@$1 else ,@$3))
-   
+
    (cond-list (cond) : $1
               (cond-list elseif cond) : `(,@$1 elseif ,@$3))
    
@@ -126,8 +128,16 @@
    (range (exp comma exp) : `(range ,$1 ,$3)
           (exp comma exp comma exp) : `(range ,$1 ,$3 ,$5))
 
-   (last-stat () : '())
-   (binding () : '())
+   (last-stat (break) : '(break)
+              (return) : '(return)
+              (return exp-list) : `(return ,$2))
+
+   (binding (local name-list) : `(local ,$2)
+            (local name-list assign exp-list) : `(assign (local ,$2) ,$3)
+            (local function name func-body) : `(local (func ,$3 ,$4)))
+
+   (func-name (dotted-name) : $1
+              (dotted-name dot name) : 
 
    (name-list (name) : $1
               ;; FIXME: Shouldn't it be 'multi-vals ?
@@ -135,6 +145,8 @@
 
    (dotted-name (name) : $1
                 (dotted-name dot name) : '(not-yet))
+
+   (func-call '())
 
    ;; Variables are places that store values. 
    ;; There are three kinds of variables in Lua:
