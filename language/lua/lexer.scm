@@ -122,12 +122,12 @@
   (and (not (null? lst))  
        (assoc-ref *all-op* (list->string (reverse lst)))))
 
-(define last-token 'begin)
+(define last-token 'none)
 
 (define (is-uminus? c port)
   (and (char=? c #\-)
        ;;(display last-token)(newline)
-       (memq last-token '(punc op begin))))
+       (memq last-token '(punc op none))))
 
 (define (is-op? c port)
   (define (check port lst)
@@ -320,7 +320,9 @@
 (define (next-token port)
   (let ((c (peek-char port)))
     (cond
-     ((eof-object? c) '*eoi*)
+     ((eof-object? c)
+      (set! last-token 'none)
+      '*eoi*)
      ((is-whitespace? c)
       (read-char port)
       ;; NOTE: don't memorize whitespace to last-token!!!
@@ -330,7 +332,7 @@
            (read-char port)
            (set! last-token 'punc)
            (return port punc #f)))
-     ((is-digit? c) 
+     ((is-digit? c)
       (let ((num (read-lua-number port)))
         (set! last-token 'number)
         (return port 'number num))) ; it's number
@@ -378,7 +380,6 @@
         (return port (punc->symbol c) #f)))) ; return the punc as token
     (else
      (cond
-      ;;((eof-object? c) '*eoi*)
       ((is-id-head? c)
        (receive (cat val)
            (read-lua-identifier port)

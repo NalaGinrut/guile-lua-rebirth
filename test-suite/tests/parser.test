@@ -51,11 +51,15 @@
      . (lt (add (id "a") (id "i")) 
            (add (div (id "b") (number 2))
                 (number 1))))
-    ("1+ false or 3" ; intended wrong evaluation, should be 1+false
+    ("1+ false or 3"
+     ;; NOTE:
+     ;; Intended wrong parsing, correct result is (1+false) or 3",
+     ;; but such wrong situation possibly occurs, so we test it.
+     ;; If it doesn't occur, another potential bug exists.
      . (or (add (number 1) (boolean false)) (number 3)))
     ("5+x^2*8"
      . (add (number 5)
-            (multi 
+            (multi
              (expt (id "x") (number 2))
              (number 8))))
     (" a < y and y <= z"
@@ -147,15 +151,12 @@
 (with-test-prefix "Lua parser"
 
   (pass-if "precedence tests"
-    (test-it "precedence tests" *precedence-tests* "*precedence-tests*")
-    #t)
+    (test-it "precedence tests" *precedence-tests* "*precedence-tests*"))
 
   (pass-if "expr tests"
-    (test-it "expr tests" *expr-tests* "*expr-tests*")
-    #t)
+    (test-it "expr tests" *expr-tests* "*expr-tests*"))
 
   (pass-if "cond tests"
-    (test-it "cond tests" *cond-tests* "*cond-tests*")
-    #t) 
+    (test-it "cond tests" *cond-tests* "*cond-tests*")) 
   )
 

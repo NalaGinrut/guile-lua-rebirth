@@ -45,7 +45,7 @@
     ("1e+6" . (number))
     ("1+6"  . (number add number))
     ("+6"   . (add number))
-    ("-6"   . (minus number))
+    ("-6"   . (uminus number))
     ("1+2,3+4" . (number add number comma number add number))
     ("1+2,3+4 and false,true"
      . (number add number comma number add number and false comma true))
@@ -226,16 +226,17 @@
 	do while repeat until local for break in not))))
 
 (define (test-it name tests tests-name)
+  (define len (length tests))
   (for-each
-   (lambda (t)
+   (lambda (t i)
      (match t
        ((src . expect)
         (let ((r (debug-lua-tokenizer src)))
           (or (equal? r expect)
-              (error (string-append name ": Failed:") src (pick-out expect r)))))
+              (error (format #f "~a[~d]: Failed: ~a~%%%%~a" name i src (pick-out expect r))))))
        (else (error (string-append "Invalid case in " tests-name) t))))
-   tests)
-  (format #t "* testing ~d case~:p...~%" (length tests)))
+   tests (iota len))
+  (format #t "* testing ~d case~:p...~%" len))
 
 (display "\n=== Lua lexer token tests ===\n")
 
