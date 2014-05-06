@@ -137,7 +137,7 @@
             (local function name func-body) : `(local (func ,$3 ,$4)))
 
    (func-name (dotted-name) : $1
-              (dotted-name dot name) : 
+              (dotted-name dot name) : )
 
    (name-list (name) : $1
               ;; FIXME: Shouldn't it be 'multi-vals ?
@@ -146,7 +146,24 @@
    (dotted-name (name) : $1
                 (dotted-name dot name) : '(not-yet))
 
-   (func-call '())
+   (func-call (prefix-exp args) : `(,@$1 ,$2)
+              ;; The colon syntax is used for defining methods, that is,
+              ;; functions that have an implicit extra parameter self. 
+              ;; Thus, the statement
+              ;;    function t.a.b.c:f (params)
+              ;;      print(self)
+              ;;      return params
+              ;;    end
+              ;; * calling: t.a.b.c.f(t.a.b.c, params)
+              ;; ** You can use `self' without implicitly declaring.
+              ;; is syntactic sugar for
+              ;;    t.a.b.c.f = function (self, params)
+              ;;      print(self)
+              ;;      return params
+              ;;    end
+              ;; * calling: t.a.b.c.f(t.a.b.c, params)
+              ;; NOTE: same way for calling!
+              (prefix-exp colon name args) : `(self ,$1 ,$3 ,$4))
 
    ;; Variables are places that store values. 
    ;; There are three kinds of variables in Lua:
