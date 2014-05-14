@@ -59,31 +59,35 @@
    ;;       by bottom-up principle. Maybe looks strange from the common grammar.
    ;;       Any problems could be solved in Dragon Book.
 
-   ;; The *unit-of-compilation* of Lua is called a chunk.
+   ;; The unit of compilation of Lua is called a chunk.
    ;; Syntactically, a chunk is simply a block:   
    (chunk (block) : $1
           (*eoi*) : *eof-object*)
-   
+
    (terminator (semi-colon) : '() ; FIXME: accept semi-colon
                () : '())
 
    ;; A block is a list of statements, which are executed sequentially
    (block (scope stat-list) : `(scope ,@$1 ,$2)
-          (scope stat-list last-stat terminator) : `(scope ,@$1 ,@$2 ,$3))
+          (scope stat-list last-stat terminator) : `(scope ,@$1 ,@$2))
+
+   (ublock (block until exp) : `(do ,$3 until ,$1))
 
    (scope () : '()
           (scope stat-list binding terminator) : `(scope ,$1 ,@$2))
-          
+
    (stat-list (stat) : $1 ; FIXME: is this correct grammar?
               (stat-list stat terminator) : `(begin ,$1 ,$2))
 
    (stat ;; A block can be explicitly delimited to produce a single statement:
-         (do block end) : $2
+         (do block end) : `(block ,$2)
          (while exp do block end) : `(while ,$1 do ,$4)
          (repeatition do block end) : `(rep ,$1 ,$3)
+         (repeat ublock) : `(repeat ,$2)
          (if conds end) : `(if ,@$2)
+         ;; named function
+         (function func-name func-body) : `(func ,$2 ,$3)
          (var-list assign exp-list) : `(assign ,$1 ,$3)
-         (function func-name func-body) : `(func ,$1 ,$2)
          (func-call) : $1
          ;; NOTE: Lua grammar doesn't accept exp directly,
          ;;       you have to use assign or function on exp,
@@ -95,17 +99,19 @@
          ;;       we should keep it when GLR is mature.         
          (exp) : $1)
 
-   (repeatition (for name assign range) : `(assign ,$2 ,$4)
-                (for name-list in exp-list) : `(assign ,$2 ,$4))
+   (repeatition (for assignment) : `(for ,$2))
+
+   (assignment (name assign range) : `(assign ,$1 ,$3)
+               (name-list in exp-list) : `(assign ,$1 ,$3))
 
    (conds (cond-list) : $1
           (cond-list else block) : `(,@$1 else ,@$3))
 
    (cond-list (cond) : $1
               (cond-list elseif cond) : `(,@$1 elseif ,@$3))
-   
+
    (cond (exp then block) : `(,$1 then ,$3))
-             
+
    (var-list (var) : $1
              ;; Multi values binding
              ;; NOTE:
@@ -120,7 +126,7 @@
              ;;    of values, before the adjustment
              ;;    (except when the call is enclosed in parentheses).
              (var-list comma var) : `(mul-vals ,$1 ,$3))
-   
+
    (exp-list (exp) : $1
              ;; Multi values returning
              (exp-list comma exp) : `(multi-exps ,$1 ,$3))
@@ -132,21 +138,24 @@
               (return) : '(return)
               (return exp-list) : `(return ,$2))
 
-   (binding (local name-list) : `(local ,$2)
-            (local name-list assign exp-list) : `(assign (local ,$2) ,$3)
-            (local function name func-body) : `(local (func ,$3 ,$4)))
+   (binding (local bindings) : $2)
+
+   (bindings (name-list) : `(local ,$1)
+             (name-list assign exp-list) : `(assign (local ,$1) ,$3)
+             (function name func-body) : `(local (func ,$2 ,$3)))
 
    (func-name (dotted-name) : $1
-              (dotted-name dot name) : )
+              (dotted-name dot name) : `(namespace ,$1 ,$3))
+
+   (dotted-name (name) : $1
+                (dotted-name dot name) : `(namespace ,$1 ,$3))
 
    (name-list (name) : $1
               ;; FIXME: Shouldn't it be 'multi-vals ?
               (dotted-name comma name) : `(multi-names ,$1 ,$3))
 
-   (dotted-name (name) : $1
-                (dotted-name dot name) : '(not-yet))
-
-   (func-call (prefix-exp args) : `(,@$1 ,$2)
+   ;; FIXME: The colon syntax has bug in lexer
+   (func-call (prefix-exp args) : `(func ,$1 ,$2)
               ;; The colon syntax is used for defining methods, that is,
               ;; functions that have an implicit extra parameter self. 
               ;; Thus, the statement
@@ -156,28 +165,77 @@
               ;;    end
               ;; * calling: t.a.b.c.f(t.a.b.c, params)
               ;; ** You can use `self' without implicitly declaring.
-              ;; is syntactic sugar for
+              ;;
+              ;; The alternative syntactic sugar for
               ;;    t.a.b.c.f = function (self, params)
               ;;      print(self)
               ;;      return params
               ;;    end
               ;; * calling: t.a.b.c.f(t.a.b.c, params)
               ;; NOTE: same way for calling!
-              (prefix-exp colon name args) : `(self ,$1 ,$3 ,$4))
+              (prefix-exp colon name args) : `(func (namespace ,$1 ,$3) ,$4))
 
    ;; Variables are places that store values. 
    ;; There are three kinds of variables in Lua:
    ;; global variables, local variables, and table fields.
-   (var (number) : `(number ,$1)
-        (string) : `(string ,$1)
+   (var (val) : $1
+        (name) : $1
+        (prefix-exp lbracket exp rbracket) : `(array ,$1 ,$3)
+        (prefix-exp dot name) : `(namespace ,$1 ,$3))
+
+   (val (number) : `(number ,$1)
         (boolean) : $1
-        (nil) : '(marker nil)
-        (name) : $1)
+        (string) : `(string ,$1)
+        (nil) : '(marker nil))
 
    (name (id) : `(id ,$1))
 
    (boolean (true) : '(boolean true)
             (false) : '(boolean false))
+
+   (prefix-exp (var) : $1
+               (func-call) : $1)
+
+   (args (lparen rparen) : '(args)
+         (lparen exp-list rparen) : `(args ,$2)
+         ;; If the function has one single argument and this argument is
+         ;; either a literal string or a table constructor, then the
+         ;; parentheses are optional.
+         ;; e.g 
+         ;; print "hello world"
+         ;; print {x=10, y=20}
+         ;; KNOWN-CONFLICT: This grammar will conflict to `var' in `string'
+         ;;                 in LALR parsing.
+         ;;                 It's not so easy to eliminate it, so let it be.
+         ;;                 It's better to fix it, of course.
+         (table-constructor) : $1
+         (string) : $1)
+
+   ;; anonymous function
+   (func (function func-body) : `(func ,$2))
+
+   ;; need new scope to hold the params bindings
+   (func-body (params block end) : `(scope ,$1 ,$2))
+
+   (params (lparen par-list rparen) : `(params ,$2))
+
+   (par-list () : '()
+             (name-list) : $1
+             (tri-dots) : `(tri-dots)
+             (name-list comma tri-dots) : `(,$1 ,$3))
+
+   (table-constructor (lbrace rbrace) : '(table)
+                      (lbrace field-list rbrace) : `(table ,$2)
+                      (lbrace field-list comma rbrace) : `(table ,$2)
+                      (lbrace field-list semi-colon rbrace) : `(table ,$2))
+
+   (field-list (field) : $1
+               (field-list comma field) : `(,$1 ,$2)
+               (field-list semi-colon field) : `(,$1 ,$2))
+
+   (field (exp) : $1
+          (name assign exp) : `(tb-key-set! ,$1 ,$3)
+          (lbracket exp rbracket assign exp) : `(tb-general-set! ,$2 ,$5))
 
    ;; NOTE:
    ;; Only logic-exp is needed here, for eliminating confilicts.
@@ -233,5 +291,4 @@
              (misc-exp expt misc-exp) : `(expt ,$1 ,$3)
              (misc-val) : $1)
    (misc-val (lparen misc-exp rparen) : $2
-             (var) : $1)
-   ))
+             (var) : $1)))
