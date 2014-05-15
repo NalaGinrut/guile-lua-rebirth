@@ -62,14 +62,23 @@
             (multi
              (expt (id "x") (number 2))
              (number 8))))
-    (" a < y and y <= z"
+    ("a < y and y <= z"
      . (and (lt (id "a") (id "y"))
             (leq (id "y") (id "z"))))
     ("-x^2"
      . (uminus (expt (id "x") (number 2))))
-    ("x^y^z"
-     . (expt (id "x")
-             (expt (id "y") (id "z"))))
+    ("x^y^z" ; expt in sequence
+     . (expt 
+        (expt (id "x") (id "y"))
+        (id "z")))
+    ("not x ^ 2" ; expt higher than not
+     . (not (expt (id "x") (number 2))))
+    ("#'123'"
+     . (hash (string "123")))
+    ("#'123' ^ 2" ; intended wrong exp! 
+     ;; expt higher than hash
+     ;; so the result is to get length from a number which should be wrong.
+     . (hash (expt (string "123") (number 2))))
     
     ))
 
@@ -106,6 +115,9 @@
      ;;. ())
     ("\"this is string\"" . (string "this is string"))
     ("'this is string'" . (string "this is string"))
+    ("a['xx']['x']+2"
+     . (add (array (array (id "a") (string "xx")) (string "x")) (number 2)))
+    
     ))
 
 ;; NOTE: Part of these tests are fake since statment can't be exp.
