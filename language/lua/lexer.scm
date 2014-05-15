@@ -34,7 +34,7 @@
 (define is-id-head? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
 (define (valid-id? c) (or (is-id-head? c) (is-digit? c)))
 (define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
-(define *delimiters* " \t\n()[]{};+-/*%^~=<>\".,")
+(define *delimiters* " \t\n()[]{};+-/*%^~=<>\".,:")
 (define is-op-sign0? (char-predicate "+-*/%^=~<>#"))
 (define is-op-sign1? (char-predicate "randot"))
 (define check-delimiter (char-predicate *delimiters*))
