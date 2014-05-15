@@ -68,13 +68,13 @@
                () : '())
 
    ;; A block is a list of statements, which are executed sequentially
-   (block (scope stat-list) : `(scope ,@$1 ,$2)
+   (block (stat-list) : `(scope ,$1)
+          (scope stat-list) : `(scope ,@$1 ,$2)
           (scope stat-list last-stat terminator) : `(scope ,@$1 ,@$2))
 
    (ublock (block until exp) : `(do ,$3 until ,$1))
 
-   (scope () : '()
-          (scope stat-list binding terminator) : `(scope ,$1 ,@$2))
+   (scope (scope stat-list binding terminator) : `(scope ,$1 ,@$2))
 
    (stat-list (stat) : $1 ; FIXME: is this correct grammar?
               (stat-list stat terminator) : `(begin ,$1 ,$2))
@@ -88,6 +88,7 @@
          ;; named function
          (function func-name func-body) : `(func ,$2 ,$3)
          (var-list assign exp-list) : `(assign ,$1 ,$3)
+         ;; anonymouse function
          (func-call) : $1
          ;; NOTE: Lua grammar doesn't accept exp directly,
          ;;       you have to use assign or function on exp,
@@ -154,7 +155,6 @@
               ;; FIXME: Shouldn't it be 'multi-vals ?
               (dotted-name comma name) : `(multi-names ,$1 ,$3))
 
-   ;; FIXME: The colon syntax has bug in lexer
    (func-call (prefix-exp args) : `(func ,$1 ,$2)
               ;; The colon syntax is used for defining methods, that is,
               ;; functions that have an implicit extra parameter self. 
@@ -175,13 +175,15 @@
               ;; NOTE: same way for calling!
               (prefix-exp colon name args) : `(func (namespace ,$1 ,$3) ,$4))
 
-   ;; Variables are places that store values. 
+   ;; Variables are places that store values.
    ;; There are three kinds of variables in Lua:
    ;; global variables, local variables, and table fields.
    (var (val) : $1
-        (name) : $1
-        (prefix-exp lbracket exp rbracket) : `(array ,$1 ,$3)
-        (prefix-exp dot name) : `(namespace ,$1 ,$3))
+        (var2) : $1)
+
+   (var2 (name) : $1
+         (prefix-exp lbracket exp rbracket) : `(array ,$1 ,$3)
+         (prefix-exp dot name) : `(namespace ,$1 ,$3))
 
    (val (number) : `(number ,$1)
         (boolean) : $1
@@ -217,10 +219,10 @@
    ;; need new scope to hold the params bindings
    (func-body (params block end) : `(scope ,$1 ,$2))
 
-   (params (lparen par-list rparen) : `(params ,$2))
+   (params (lparen par-list rparen) : `(params ,$2)
+           (lparen rparen) : '())
 
-   (par-list () : '()
-             (name-list) : $1
+   (par-list (name-list) : $1
              (tri-dots) : `(tri-dots)
              (name-list comma tri-dots) : `(,$1 ,$3))
 
@@ -243,6 +245,11 @@
    (exp ;;(misc-exp) : $1
         ;;(arith-exp) : $1
         ;;(string-exp) : $1
+        ;; NOTE: exp has func according to Lua spec, or you can't define
+        ;;       functions in the program. But without it you can still
+        ;;       do that in guile-lua-rebirth, because we allow exp in
+        ;;       stat, which breaks the spec.
+        (func) : $1
         (logic-exp) : $1)
    
    ;; Lua Precedence(from higher to lower):
@@ -270,6 +277,8 @@
               (string-exp) : $1)
 
    ;; for string
+   ;; NOTE: Lua permit arith op between numbers and strings
+   ;; e.g: print(1+'123') ==> 124
    (string-exp (string concat string) : `(concat ,$1 ,$3)
                (arith-exp) : $1)
 
@@ -283,12 +292,12 @@
    (arith-factor (lparen arith-exp rparen) : $2
                  (misc-exp) : $1)
 
-   (misc-exp (not misc-exp (prec: not)) : `(not ,$2)
-             (hash misc-exp (prec: hash)) : `(hash ,$2)
+   (misc-exp (not misc-exp) : `(not ,$2)
+             (hash misc-exp) : `(hash ,$2)
              ;; NOTE: There's no '+number' notation in Lua! 
              ;;       But there is '-number'.
-             (uminus misc-exp (prec: uminus)) : `(uminus ,$2)
-             (misc-exp expt misc-exp) : `(expt ,$1 ,$3)
+             (uminus misc-exp) : `(uminus ,$2)
+             (misc-exp expt misc-val) : `(expt ,$1 ,$3)
              (misc-val) : $1)
    (misc-val (lparen misc-exp rparen) : $2
              (var) : $1)))
