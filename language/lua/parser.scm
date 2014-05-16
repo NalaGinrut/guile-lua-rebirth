@@ -22,6 +22,11 @@
 (define (read-lua port)
   (make-reader make-parser make-lua-tokenizer port))
 
+;; NOTE:
+;; Acoording to conventions of scm-lalr:
+;; * Shift/Reduce: resolved by shifting.
+;; * Reduce/Reduce: resolved by choosing the rule listed first in the grammar
+;;                  definition.
 (define (make-parser)
   (lalr-parser
    (;; punctuations
@@ -40,8 +45,9 @@
     id sp-id tri-dots
     
     or and lt gt leq geq neq eq concat
-    add minus multi div mod not hash uminus expt assign)
-
+    add minus multi div mod
+    ;;not hash uminus expt assign)
+    
     ;; NOTE: We handled the correct precedence manually in BNF, so we don't need
     ;;       to specify it here.
     ;; according to operations precedence
@@ -51,9 +57,9 @@
     ;;(right: concat)
     ;;(left: add minus)
     ;;(left: multi div mod)
-    ;;(nonassoc: not hash uminus)
-    ;;(right: expt)
-    ;;(right: assign))
+    (nonassoc: not hash uminus)
+    (right: expt)
+    (right: assign))
 
    ;; NOTE: This is a LALR grammar, which means it has to be constrained
    ;;       by bottom-up principle. Maybe looks strange from the common grammar.
@@ -81,8 +87,8 @@
 
    (stat ;; A block can be explicitly delimited to produce a single statement:
          (do block end) : `(block ,$2)
-         (while exp do block end) : `(while ,$1 do ,$4)
-         (repeatition do block end) : `(rep ,$1 ,$3)
+         (while exp do block end) : `(while ,$2 do ,$4)
+         (repeatition do block end) : `(rep (scope ,$1 ,$3))
          (repeat ublock) : `(repeat ,$2)
          (if conds end) : `(if ,@$2)
          ;; named function
@@ -92,12 +98,12 @@
          (func-call) : $1
          ;; NOTE: Lua grammar doesn't accept exp directly,
          ;;       you have to use assign or function on exp,
-         ;;       say, a=1+2 or print(1+2), 
+         ;;       say, a=1+2 or print(1+2),
          ;;       1+2 will cause a syntax error.
          ;; FIXME:
          ;;       However, we need to test the parsing of exp easier,
          ;;       so we add this syntax. It's susppended whether
-         ;;       we should keep it when GLR is mature.         
+         ;;       we should keep it when guile-lua-rebirth is mature.         
          (exp) : $1)
 
    (repeatition (for assignment) : `(for ,$2))
@@ -227,13 +233,13 @@
              (name-list comma tri-dots) : `(,$1 ,$3))
 
    (table-constructor (lbrace rbrace) : '(table)
-                      (lbrace field-list rbrace) : `(table ,$2)
-                      (lbrace field-list comma rbrace) : `(table ,$2)
-                      (lbrace field-list semi-colon rbrace) : `(table ,$2))
+                      (lbrace field-list rbrace) : `(table ,@$2)
+                      (lbrace field-list comma rbrace) : `(table ,@$2)
+                      (lbrace field-list semi-colon rbrace) : `(table ,@$2))
 
    (field-list (field) : $1
-               (field-list comma field) : `(,$1 ,$2)
-               (field-list semi-colon field) : `(,$1 ,$2))
+               (field-list comma field) : `(,$1 ,$3)
+               (field-list semi-colon field) : `(,$1 ,$3))
 
    (field (exp) : $1
           (name assign exp) : `(tb-key-set! ,$1 ,$3)
@@ -241,15 +247,10 @@
 
    ;; NOTE:
    ;; Only logic-exp is needed here, for eliminating confilicts.
-   ;; Because LALR can't be reduced from multi terminats. 
+   ;; Because LALR can't be reduced from multi terminates. 
    (exp ;;(misc-exp) : $1
         ;;(arith-exp) : $1
         ;;(string-exp) : $1
-        ;; NOTE: exp has func according to Lua spec, or you can't define
-        ;;       functions in the program. But without it you can still
-        ;;       do that in guile-lua-rebirth, because we allow exp in
-        ;;       stat, which breaks the spec.
-        (func) : $1
         (logic-exp) : $1)
    
    ;; Lua Precedence(from higher to lower):
@@ -292,12 +293,20 @@
    (arith-factor (lparen arith-exp rparen) : $2
                  (misc-exp) : $1)
 
-   (misc-exp (not misc-exp) : `(not ,$2)
-             (hash misc-exp) : `(hash ,$2)
+   (misc-exp (not misc-exp (prec: not)) : `(not ,$2)
+             (hash misc-exp (prec: hash)) : `(hash ,$2)
              ;; NOTE: There's no '+number' notation in Lua! 
              ;;       But there is '-number'.
-             (uminus misc-exp) : `(uminus ,$2)
+             (uminus misc-exp (prec: uminus)) : `(uminus ,$2)
              (misc-exp expt misc-val) : `(expt ,$1 ,$3)
              (misc-val) : $1)
    (misc-val (lparen misc-exp rparen) : $2
+             ;; NOTE: exp has func according to Lua spec, or you can't define
+             ;;       functions in the program. But without it you can still
+             ;;       do that in guile-lua-rebirth, because we allow exp in
+             ;;       stat, which breaks the spec.
+             (func) : $1
+             (func-call) : $1
+             ;; NOTE: the same as table-constructor
+             (table-constructor) : $1
              (var) : $1)))
