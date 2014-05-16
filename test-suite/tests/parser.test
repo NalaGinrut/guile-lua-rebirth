@@ -117,7 +117,48 @@
     ("'this is string'" . (string "this is string"))
     ("a['xx']['x']+2"
      . (add (array (array (id "a") (string "xx")) (string "x")) (number 2)))
-    
+    ("while a<2 do print(a) a=a-1 end"
+     . (while (lt (id "a") (number 2)) 
+         do 
+         (scope 
+          (begin 
+            (func (id "print") (args (id "a")))
+            (assign (id "a") 
+                    (minus (id "a") (number 1)))))))
+    ("do a=1+2 print(a) end"
+     . (block 
+        (scope 
+         (begin
+           (assign (id "a") (add (number 1) (number 2)))
+           (func (id "print") (args (id "a")))))))
+    ("for a=1,10 do print(a) end"
+     . (rep
+        (scope
+         (for 
+          (assign (id "a") (range (number 1) (number 10))))
+         (scope 
+          (func (id "print") (args (id "a")))))))
+    ("for a=1,10,2 do print(a) end"
+     . (rep 
+        (scope 
+         (for (assign (id "a") (range (number 1) (number 10) (number 2))))
+         (scope (func (id "print") (args (id "a")))))))
+    ("pairs({x=1,y=2})"
+     . (func (id "pairs") 
+             (args 
+              (table (tb-key-set! (id "x") (number 1))
+                     (tb-key-set! (id "y") (number 2))))))
+    ("for a,b in pairs({x=1,y=2}) do print(a) print(b) end"
+     . (rep 
+        (scope 
+         (for 
+          (assign (multi-names (id "a") (id "b")) 
+                  (func (id "pairs")
+                        (args (table (tb-key-set! (id "x") (number 1))
+                                     (tb-key-set! (id "y") (number 2)))))))
+         (scope 
+          (begin (func (id "print") (args (id "a"))) 
+                 (func (id "print") (args (id "b"))))))))
     ))
 
 ;; NOTE: Part of these tests are fake since statment can't be exp.
