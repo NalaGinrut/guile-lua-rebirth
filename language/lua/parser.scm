@@ -110,7 +110,7 @@
          (repeat ublock) : `(repeat ,$2)
          (if conds end) : `(if ,@$2)
          ;; named function
-         (function func-name func-body) : `(func ,$2 ,$3)
+         (function func-name func-body) : `(func-def ,$2 ,$3)
          (var-list assign exp-list) : `(assign ,$1 ,$3)
          ;; anonymouse function
          (func-call) : $1
@@ -167,10 +167,12 @@
 
    (bindings (name-list) : `(local ,$1)
              (name-list assign exp-list) : `(assign (local ,$1) ,$3)
-             (function name func-body) : `(local (func ,$2 ,$3)))
+             (function name func-body) : `(local (func-def ,$2 ,$3)))
 
    (func-name (dotted-name) : $1
-              (dotted-name dot name) : `(namespace ,$1 ,$3))
+              ;; TODO: colon-ref will treat the outter-most namespace as
+              ;;       the implicit first argument, say, self. 
+              (dotted-name colon name) : `(namespace ,$1 (colon-ref ,$3)))
 
    (dotted-name (name) : $1
                 (dotted-name dot name) : `(namespace ,$1 ,$3))
@@ -179,7 +181,7 @@
               ;; FIXME: Shouldn't it be 'multi-vals ?
               (dotted-name comma name) : `(multi-names ,$1 ,$3))
 
-   (func-call (prefix-exp args) : `(func ,$1 ,$2)
+   (func-call (prefix-exp args) : `(func-call ,$1 ,$2)
               ;; The colon syntax is used for defining methods, that is,
               ;; functions that have an implicit extra parameter self. 
               ;; Thus, the statement
@@ -197,7 +199,8 @@
               ;;    end
               ;; * calling: t.a.b.c.f(t.a.b.c, params)
               ;; NOTE: same way for calling!
-              (prefix-exp colon name args) : `(func (namespace ,$1 ,$3) ,$4))
+              (prefix-exp colon name args) 
+              : `(func-colon-call (namespace ,$1 ,$3) ,$4))
 
    ;; Variables are places that store values.
    ;; There are three kinds of variables in Lua:
@@ -238,7 +241,7 @@
          (string) : $1)
 
    ;; anonymous function
-   (func (function func-body) : `(func ,$2))
+   (func (function func-body) : `(anon-func-def ,$2))
 
    ;; need new scope to hold the params bindings
    (func-body (params block end) : `(scope ,$1 ,$2))
