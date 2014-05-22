@@ -75,15 +75,33 @@
 
    ;; A block is a list of statements, which are executed sequentially
    (block (stat-list) : `(scope ,$1)
-          (scope stat-list) : `(scope ,@$1 ,$2)
-          (scope stat-list last-stat terminator) : `(scope ,@$1 ,@$2))
+          (scope stat-list) 
+          : (if (null? $1) `(scope ,$2) `(scope ,$1 ,$2))
+          (scope stat-list last-stat terminator)
+          : (if (null? $1)
+                (if (null? $2)
+                    `(scope ,$3)
+                    `(scope (begin ,$2 ,$3)))
+                `(scope (begin ,$1 ,$2 ,$3))))
+   ;; TODO: optimize `scope', if there's no any bindings, the scope env shouldn't
+   ;;       be produced.
+   
+   ;;(scope-stat (scope stat-list) : `(,@$1 ,$2)
+   ;;            (scope-stat last-stat) : `(,@$1 ,$2))
 
    (ublock (block until exp) : `(do ,$3 until ,$1))
 
-   (scope (scope stat-list binding terminator) : `(scope ,$1 ,@$2))
+   (scope (scope stat-list binding terminator)
+          : (if (null? $1)
+                (if (null? $2)
+                    `(scope ,$3)
+                    `(scope (begin ,$2 ,$3)))
+                `(scope (begin (scope ,$1) ,$2 ,$3)))
+          () : '())
 
-   (stat-list (stat) : $1 ; FIXME: is this correct grammar?
-              (stat-list stat terminator) : `(begin ,$1 ,$2))
+   (stat-list () : '() ; FIXME: is this correct grammar?
+              (stat-list stat terminator) 
+              : (if (null? $1) $2 `(begin ,$1 ,$2)))
 
    (stat ;; A block can be explicitly delimited to produce a single statement:
          (do block end) : `(block ,$2)
@@ -226,7 +244,7 @@
    (func-body (params block end) : `(scope ,$1 ,$2))
 
    (params (lparen par-list rparen) : `(params ,$2)
-           (lparen rparen) : '())
+           (lparen rparen) : '(void))
 
    (par-list (name-list) : $1
              (tri-dots) : `(tri-dots)
