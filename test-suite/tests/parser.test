@@ -107,7 +107,7 @@
              (number 8))))
     ("nil" . (marker nil))
     ("a=1+2" . (assign (id "a") (add (number 1) (number 2))))
-   ;; ("a = b + c
+    ;; ("a = b + c
      ;; (print or io.write)('done')"
      ;; NOTE: According to the manual 5.2
      ;; The current parser always sees such constructions in the first way,
@@ -116,11 +116,13 @@
     ("\"this is string\"" . (string "this is string"))
     ("'this is string'" . (string "this is string"))
     ("a['xx']['x']+2"
-     . (add (array (array (id "a") (string "xx")) (string "x")) (number 2)))
-    ("while a<2 do print(a) a=a-1 end"
-     . (while (lt (id "a") (number 2)) 
+     . (add (array (array (id "a") (string "xx")) (string "x")) (number 2)))))
+
+(define *stat-tests*
+  `(("while a<2 do print(a) a=a-1 end"
+     . (while (lt (id "a") (number 2))
          do 
-         (scope 
+         (scope
           (begin 
             (func (id "print") (args (id "a")))
             (assign (id "a") 
@@ -159,6 +161,11 @@
          (scope 
           (begin (func (id "print") (args (id "a"))) 
                  (func (id "print") (args (id "b"))))))))
+    ("return 1"
+     . (return (number 1)))
+    ("x=1 return x+1"
+     . (begin (assign (id "x") (number 1))
+              (return (add (id "x") (number 1)))))
     ))
 
 ;; NOTE: Part of these tests are fake since statment can't be exp.
@@ -179,6 +186,14 @@
            then(scope (number 4))
            elseif (number 5)
            then (scope (number 6))))
+    ))
+
+(define *func-tests*
+  `(("function a(x) return 1+x end"
+     . (func (id "a")
+             (scope 
+              (params (id "x"))
+              (scope (return (add (number 1) (id "x")))))))
     ))
 
 ;; This is useful to drop `scope' symbol which should exist
@@ -209,7 +224,14 @@
   (pass-if "expr tests"
     (test-it "expr tests" *expr-tests* "*expr-tests*"))
 
+  (pass-if "stat tests"
+    (test-it "stat tests" *stat-tests* "*stat-tests*"))
+
   (pass-if "cond tests"
-    (test-it "cond tests" *cond-tests* "*cond-tests*")) 
+    (test-it "cond tests" *cond-tests* "*cond-tests*"))
+
+  (pass-if "func tests"
+    (test-it "func tests" *func-tests* "*func-tests*"))
+
   )
 
