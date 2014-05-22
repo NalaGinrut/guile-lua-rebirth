@@ -124,7 +124,7 @@
          do 
          (scope
           (begin 
-            (func (id "print") (args (id "a")))
+            (func-call (id "print") (args (id "a")))
             (assign (id "a") 
                     (minus (id "a") (number 1)))))))
     ("do a=1+2 print(a) end"
@@ -132,35 +132,30 @@
         (scope 
          (begin
            (assign (id "a") (add (number 1) (number 2)))
-           (func (id "print") (args (id "a")))))))
+           (func-call (id "print") (args (id "a")))))))
     ("for a=1,10 do print(a) end"
      . (rep
         (scope
          (for 
           (assign (id "a") (range (number 1) (number 10))))
          (scope 
-          (func (id "print") (args (id "a")))))))
+          (func-call (id "print") (args (id "a")))))))
     ("for a=1,10,2 do print(a) end"
      . (rep 
         (scope 
          (for (assign (id "a") (range (number 1) (number 10) (number 2))))
-         (scope (func (id "print") (args (id "a")))))))
-    ("pairs({x=1,y=2})"
-     . (func (id "pairs") 
-             (args 
-              (table (tb-key-set! (id "x") (number 1))
-                     (tb-key-set! (id "y") (number 2))))))
+         (scope (func-call (id "print") (args (id "a")))))))
     ("for a,b in pairs({x=1,y=2}) do print(a) print(b) end"
      . (rep 
         (scope 
          (for 
           (assign (multi-names (id "a") (id "b")) 
-                  (func (id "pairs")
+                  (func-call (id "pairs")
                         (args (table (tb-key-set! (id "x") (number 1))
                                      (tb-key-set! (id "y") (number 2)))))))
          (scope 
-          (begin (func (id "print") (args (id "a"))) 
-                 (func (id "print") (args (id "b"))))))))
+          (begin (func-call (id "print") (args (id "a"))) 
+                 (func-call (id "print") (args (id "b"))))))))
     ("return 1"
      . (return (number 1)))
     ("x=1 return x+1"
@@ -189,11 +184,79 @@
     ))
 
 (define *func-tests*
-  `(("function a(x) return 1+x end"
-     . (func (id "a")
-             (scope 
-              (params (id "x"))
-              (scope (return (add (number 1) (id "x")))))))
+  `(("pairs({x=1,y=2})"
+     . (func-call (id "pairs") 
+                  (args 
+                   (table (tb-key-set! (id "x") (number 1))
+                          (tb-key-set! (id "y") (number 2))))))
+    ("function a(x) return 1+x end"
+     . (func-def 
+        (id "a")
+        (scope 
+         (params (id "x"))
+         (scope (return (add (number 1) (id "x")))))))
+    ("function t.a.b.c:f (x)
+        print(self)
+        return x
+      end"
+     . (func-def
+        (namespace
+         (namespace
+          (namespace
+           (namespace
+            (id "t") (id "a"))
+           (id "b"))
+          (id "c"))
+         (colon-ref (id "f")))
+        (scope
+         (params (id "x"))
+         (scope
+          (begin 
+            (func-call (id "print") (args (id "self")))
+            (return (id "x")))))))
+    ("t.a.b.c.f = function (self, x)
+       print(self)
+       return x
+      end"
+     .  (assign
+         (namespace
+          (namespace
+           (namespace
+            (namespace
+             (id "t") (id "a"))
+            (id "b"))
+           (id "c"))
+          (id "f"))
+         (anon-func-def
+          (scope
+           (params (multi-names (id "self") (id "x")))
+           (scope
+            (begin
+              (func-call (id "print") (args (id "self")))
+              (return (id "x"))))))))
+    ("t.a.b.c:f(123)"
+     . (func-colon-call
+        (namespace
+         (namespace
+          (namespace
+           (namespace
+            (id "t") (id "a"))
+           (id "b"))
+          (id "c"))
+         (id "f"))
+        (args (number 123))))
+    ("t.a.b.c.f(t,123)"
+     . (func-call
+        (namespace
+         (namespace
+          (namespace
+           (namespace
+            (id "t") (id "a"))
+           (id "b"))
+          (id "c"))
+         (id "f"))
+        (args
+         (multi-exps (id "t") (number 123)))))
     ))
 
 ;; This is useful to drop `scope' symbol which should exist
