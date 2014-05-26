@@ -17,6 +17,7 @@
   #:use-module (language lua utils)
   #:use-module (language lua lexer)
   #:use-module (system base lalr)
+  #:use-module (ice-9 match)
   #:export (make-parser read-lua))
 
 (define (read-lua port)
@@ -30,12 +31,17 @@
 (define (make-parser)
   (lalr-parser
    (;; punctuations
-    semi-colon comma dot lbrace rbrace lparen rparen lbracket rbracket
-    colon
-    
+    (left: semi-colon comma rparen rbrace rbracket)
+    (right: dot lbrace lparen lbracket colon)
+
     ;; reserved word
-    return function end if then elseif else true false nil
-    do while repeat until local for break in
+    end if then elseif else true false nil
+    (right: return function while)
+    (nonassoc: do repeat)
+    (left: local break)
+    (right: for in)
+    until
+
     ;; or and not hash
 
     ;; type
@@ -66,16 +72,16 @@
    ;;       Any problems could be solved in Dragon Book.
 
    ;; The unit of compilation of Lua is called a chunk.
-   ;; Syntactically, a chunk is simply a block:   
+   ;; Syntactically, a chunk is simply a block:
    (chunk (block) : $1
           (*eoi*) : *eof-object*)
 
-   (terminator (semi-colon) : '() ; FIXME: accept semi-colon
+   (terminator (semi-colon) : '()
                () : '())
 
+   ;; FIXME: what's the difference between block and scope?
    ;; A block is a list of statements, which are executed sequentially
-   (block (stat-list) : `(scope ,$1)
-          (scope stat-list) 
+   (block (scope stat-list) 
           : (if (null? $1) `(scope ,$2) `(scope ,$1 ,$2))
           (scope stat-list last-stat terminator)
           : (if (null? $1)
@@ -86,27 +92,26 @@
    ;; TODO: optimize `scope', if there's no any bindings, the scope env shouldn't
    ;;       be produced.
    
-   ;;(scope-stat (scope stat-list) : `(,@$1 ,$2)
-   ;;            (scope-stat last-stat) : `(,@$1 ,$2))
-
    (ublock (block until exp) : `(do ,$3 until ,$1))
 
-   (scope (scope stat-list binding terminator)
+   (scope () : '()
+          (scope stat-list binding terminator)
           : (if (null? $1)
                 (if (null? $2)
-                    `(scope ,$3)
-                    `(scope (begin ,$2 ,$3)))
-                `(scope (begin (scope ,$1) ,$2 ,$3)))
-          () : '())
+                    $3
+                    `(begin ,$2 ,$3))
+                `(begin (scope ,$1) ,$2 ,$3)))
 
-   (stat-list () : '() ; FIXME: is this correct grammar?
-              (stat-list stat terminator) 
+   (stat-list () : '()
+              (stat-list stat terminator)
               : (if (null? $1) $2 `(begin ,$1 ,$2)))
 
    (stat ;; A block can be explicitly delimited to produce a single statement:
-         (do block end) : `(block ,$2)
-         (while exp do block end) : `(while ,$2 do ,$4)
-         (repeatition do block end) : `(rep (scope ,$1 ,$3))
+         (loop-stmt do-block) 
+         : (match $1
+             ('() $2)
+             (('rep r) `(rep (scope ,r ,$2)))
+             (else `(while ,$1 do ,$2)))
          (repeat ublock) : `(repeat ,$2)
          (if conds end) : `(if ,@$2)
          ;; named function
@@ -124,10 +129,16 @@
          ;;       we should keep it when guile-lua-rebirth is mature.         
          (exp) : $1)
 
+   (do-block (do block end) : $2)
+
+   (loop-stmt (while exp) : $2
+              (repeatition) : `(rep ,$1)
+              () : '())
+
    (repeatition (for assignment) : `(for ,$2))
 
    (assignment (name assign range) : `(assign ,$1 ,$3)
-               (name-list in exp-list) : `(assign ,$1 ,$3))
+              (name-list in exp-list) : `(assign ,$1 ,$3))
 
    (conds (cond-list) : $1
           (cond-list else block) : `(,@$1 else ,@$3))
@@ -163,7 +174,8 @@
               (return) : '(return)
               (return exp-list) : `(return ,$2))
 
-   (binding (local bindings) : $2)
+   (binding () : '() 
+            (local bindings) : $2)
 
    (bindings (name-list) : `(local ,$1)
              (name-list assign exp-list) : `(assign (local ,$1) ,$3)
@@ -202,22 +214,15 @@
               (prefix-exp colon name args) 
               : `(func-colon-call (namespace ,$1 ,$3) ,$4))
 
-   ;; Variables are places that store values.
-   ;; There are three kinds of variables in Lua:
-   ;; global variables, local variables, and table fields.
-   (var (val) : $1
-        (var2) : $1)
+   ;; ;; Variables are places that store values.
+   ;; ;; There are three kinds of variables in Lua:
+   ;; ;; global variables, local variables, and table fields.
+   (var (name) : $1
+        (prefix-exp lbracket exp rbracket) : `(array ,$1 ,$3)
+        (prefix-exp dot name) : `(namespace ,$1 ,$3))
 
-   (var2 (name) : $1
-         (prefix-exp lbracket exp rbracket) : `(array ,$1 ,$3)
-         (prefix-exp dot name) : `(namespace ,$1 ,$3))
-
-   (val (number) : `(number ,$1)
-        (boolean) : $1
-        (string) : `(string ,$1)
-        (nil) : '(marker nil))
-
-   (name (id) : `(id ,$1))
+   (name (id) : `(id ,$1)
+         (sp-id) : `(sp-id ,$1))
 
    (boolean (true) : '(boolean true)
             (false) : '(boolean false))
@@ -327,7 +332,12 @@
              ;;       do that in guile-lua-rebirth, because we allow exp in
              ;;       stat, which breaks the spec.
              (func) : $1
-             (func-call) : $1
+             (prefix-exp) : $1
              ;; NOTE: the same as table-constructor
              (table-constructor) : $1
-             (var) : $1)))
+             (number) : `(number ,$1)
+             (boolean) : $1
+             (string) : `(string ,$1)
+             (nil) : '(marker nil)
+             (tri-dots) : $1
+             )))
