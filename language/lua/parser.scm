@@ -33,14 +33,13 @@
    (;; punctuations
     (left: semi-colon comma rparen rbrace rbracket)
     (right: dot lbrace lparen lbracket colon)
+    ;;(nonassoc: lparen #|rparen|#)
 
     ;; reserved word
-    end if then elseif else true false nil
-    (right: return function while)
-    (nonassoc: do repeat)
+    end if then elseif else do until
+    (right: while for in function)
+    (nonassoc: return repeat true false nil)
     (left: local break)
-    (right: for in)
-    until
 
     ;; or and not hash
 
@@ -50,9 +49,8 @@
     ;; misc
     id sp-id tri-dots
     
-    or and lt gt leq geq neq eq concat
+    or and lt leq gt geq eq neq concat
     add minus multi div mod
-    ;;not hash uminus expt assign)
     
     ;; NOTE: We handled the correct precedence manually in BNF, so we don't need
     ;;       to specify it here.
@@ -74,21 +72,39 @@
    ;; The unit of compilation of Lua is called a chunk.
    ;; Syntactically, a chunk is simply a block:
    (chunk (block) : $1
+          ;; NOTE: Lua grammar doesn't accept exp as chunk directly,
+          ;;       you have to use assign or function on exp,
+          ;;       say, a=1+2 or print(1+2),
+          ;;       1+2 will cause a syntax error.
           (*eoi*) : *eof-object*)
 
-   (terminator (semi-colon) : '()
-               () : '())
+   (terminator () : '()
+               (semi-colon) : '())
 
-   ;; FIXME: what's the difference between block and scope?
-   ;; A block is a list of statements, which are executed sequentially
-   (block (scope stat-list) 
-          : (if (null? $1) `(scope ,$2) `(scope ,$1 ,$2))
-          (scope stat-list last-stat terminator)
-          : (if (null? $1)
-                (if (null? $2)
-                    `(scope ,$3)
-                    `(scope (begin ,$2 ,$3)))
-                `(scope (begin ,$1 ,$2 ,$3))))
+   ;; Q: what's the difference between block and scope?
+   ;; A block is a list of statements, which are executed sequentially.
+   ;; Local variables have their scope limited to the block where they
+   ;; are declared. A block is the body of a control structure, the body
+   ;; of a function, or a chunk (the file or string with the code where
+   ;; the variable is declared).
+   (block (scope stat-list scope-rest)
+          : (cond
+             ((null? $1) 
+              (if (null? $2)
+                  (if (null? $3)
+                      `(scope) ; FIXME: is it proper?
+                      `(scope ,$3))
+                  (if (null? $3)
+                      `(scope ,$2)
+                      `(scope (begin ,$2 ,$3)))))
+             ((null? $2) 
+              (if (null? $3)
+                  `(scope ,$1)
+                  `(scope (begin ,$1 ,$3))))
+             (else `(scope (begin ,$1 ,$2 ,@$3)))))
+
+   (scope-rest () : '()
+               (last-stat terminator) : $1)
    ;; TODO: optimize `scope', if there's no any bindings, the scope env shouldn't
    ;;       be produced.
    
@@ -118,18 +134,9 @@
          (function func-name func-body) : `(func-def ,$2 ,$3)
          (var-list assign exp-list) : `(assign ,$1 ,$3)
          ;; anonymouse function
-         (func-call) : $1
-         ;; NOTE: Lua grammar doesn't accept exp directly,
-         ;;       you have to use assign or function on exp,
-         ;;       say, a=1+2 or print(1+2),
-         ;;       1+2 will cause a syntax error.
-         ;; FIXME:
-         ;;       However, we need to test the parsing of exp easier,
-         ;;       so we add this syntax. It's susppended whether
-         ;;       we should keep it when guile-lua-rebirth is mature.         
-         (exp) : $1)
+         (func-call) : $1)
 
-   (do-block (do block end) : $2)
+   (do-block (do block end) : `(do-block ,$2))
 
    (loop-stmt (while exp) : $2
               (repeatition) : `(rep ,$1)
@@ -163,16 +170,28 @@
              ;;    (except when the call is enclosed in parentheses).
              (var-list comma var) : `(mul-vals ,$1 ,$3))
 
-   (exp-list (exp) : $1
-             ;; Multi values returning
-             (exp-list comma exp) : `(multi-exps ,$1 ,$3))
+   (exp-list (exp-list-stat exp) 
+             : (if (null? $1)
+                   $2
+                   `(multi-exps ,$1 ,$2)))
 
-   (range (exp comma exp) : `(range ,$1 ,$3)
-          (exp comma exp comma exp) : `(range ,$1 ,$3 ,$5))
+   (exp-list-stat () : '()
+                  ;; Multi values returning
+                  (exp-list comma) : $1)
+
+   (range (exp comma exp range-rest)
+          : (if (null? $4) 
+                `(range ,$1 ,$3)
+                `(range ,$1 ,$3 ,$4)))
+
+   (range-rest () : '()
+               (comma exp) : $2)
 
    (last-stat (break) : '(break)
-              (return) : '(return)
-              (return exp-list) : `(return ,$2))
+              (return return-stat) : $2)
+   
+   (return-stat () : '(return)
+                (exp-list) : `(return ,$1))
 
    (binding () : '() 
             (local bindings) : $2)
@@ -188,10 +207,6 @@
 
    (dotted-name (name) : $1
                 (dotted-name dot name) : `(namespace ,$1 ,$3))
-
-   (name-list (name) : $1
-              ;; FIXME: Shouldn't it be 'multi-vals ?
-              (dotted-name comma name) : `(multi-names ,$1 ,$3))
 
    (func-call (prefix-exp args) : `(func-call ,$1 ,$2)
               ;; The colon syntax is used for defining methods, that is,
@@ -246,17 +261,22 @@
          (string) : $1)
 
    ;; anonymous function
-   (func (function func-body) : `(anon-func-def ,$2))
+   (anonymous-func (function func-body) : `(anon-func-def ,$2))
 
    ;; need new scope to hold the params bindings
    (func-body (params block end) : `(scope ,$1 ,$2))
 
-   (params (lparen par-list rparen) : `(params ,$2)
-           (lparen rparen) : '(void))
+   (params (lparen par-list rparen) : `(params ,@$2))
 
-   (par-list (name-list) : $1
-             (tri-dots) : `(tri-dots)
-             (name-list comma tri-dots) : `(,$1 ,$3))
+   (par-list () : '((void))
+             (name-lists) : $1
+             (tri-dots) : '(tri-dots))
+
+   (name-lists (name-list) : $1
+               (name-list comma tri-dots) : `(,@$1 ,$3))
+
+   (name-list (name) : (list $1)
+              (name-list comma name) : `(,@$1 ,$3))
 
    (table-constructor (lbrace rbrace) : '(table)
                       (lbrace field-list rbrace) : `(table ,@$2)
@@ -328,10 +348,8 @@
              (misc-val) : $1)
    (misc-val (lparen misc-exp rparen) : $2
              ;; NOTE: exp has func according to Lua spec, or you can't define
-             ;;       functions in the program. But without it you can still
-             ;;       do that in guile-lua-rebirth, because we allow exp in
-             ;;       stat, which breaks the spec.
-             (func) : $1
+             ;;       functions in the program.
+             (anonymous-func) : $1
              (prefix-exp) : $1
              ;; NOTE: the same as table-constructor
              (table-constructor) : $1
@@ -339,5 +357,4 @@
              (boolean) : $1
              (string) : `(string ,$1)
              (nil) : '(marker nil)
-             (tri-dots) : $1
-             )))
+             (tri-dots) : '(tri-dots))))
