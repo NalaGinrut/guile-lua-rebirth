@@ -183,6 +183,23 @@
            then (scope (func-call (id "print") (args (number 4))))
            elseif (number 5)
            then (scope (func-call (id "print") (args (number 6))))))
+    ("if 1 then 
+         if 11 then
+            print(12)
+         elseif 12 then
+            print(13)
+         else print(33)
+         end
+      elseif 3 then print(4) end"
+     . (if (number 1)
+           then (scope
+                 (if (number 11) then
+                     (scope (func-call (id "print") (args (number 12))))
+                     elseif (number 12) then
+                     (scope (func-call (id "print") (args (number 13))))
+                     else (scope (func-call (id "print") (args (number 33))))))
+           elseif (number 3) then
+           (scope (func-call (id "print") (args (number 4))))))
     ))
 
 (define *func-tests*
