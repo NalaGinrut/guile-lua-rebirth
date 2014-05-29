@@ -36,8 +36,8 @@
     ;;(nonassoc: lparen #|rparen|#)
 
     ;; reserved word
-    end if then elseif else do until
-    (right: while for in function)
+    end until elseif
+    (right: while for in function if then #|elseif|# else do)
     (nonassoc: return repeat true false nil)
     (left: local break)
 
@@ -49,7 +49,7 @@
     ;; misc
     id sp-id tri-dots
     
-    or and lt leq gt geq eq neq concat
+    or and lt leq gt geq eq neq
     add minus multi div mod
     
     ;; NOTE: We handled the correct precedence manually in BNF, so we don't need
@@ -58,7 +58,7 @@
     ;;(left: or)
     ;;(left: and) 
     ;;(left: lt gt leq geq neq eq)
-    ;;(right: concat)
+    (right: concat)
     ;;(left: add minus)
     ;;(left: multi div mod)
     (nonassoc: not hash uminus)
@@ -148,10 +148,15 @@
               (name-list in exp-list) : `(assign ,$1 ,$3))
 
    (conds (cond-list) : $1
-          (cond-list else block) : `(,@$1 else ,@$3))
+          (cond-list else block) : `(,@$1 else ,$3))
 
-   (cond-list (cond) : $1
-              (cond-list elseif cond) : `(,@$1 elseif ,@$3))
+   (cond-list (cond-list-prefix cond)
+              : (if (null? $1)
+                    $2
+                    `(,@$1 elseif ,@$2)))
+
+   (cond-list-prefix () : '()
+                     (cond-list elseif) : $1)
 
    (cond (exp then block) : `(,$1 then ,$3))
 
@@ -209,7 +214,7 @@
                 (dotted-name dot name) : `(namespace ,$1 ,$3))
 
    (func-call (prefix-exp args) : `(func-call ,$1 ,$2)
-              ;; The colon syntax is used for defining methods, that is,
+               ;; The colon syntax is used for defining methods, that is,
               ;; functions that have an implicit extra parameter self. 
               ;; Thus, the statement
               ;;    function t.a.b.c:f (params)
@@ -227,7 +232,8 @@
               ;; * calling: t.a.b.c.f(t.a.b.c, params)
               ;; NOTE: same way for calling!
               (prefix-exp colon name args) 
-              : `(func-colon-call (namespace ,$1 ,$3) ,$4))
+              : `(func-colon-call (namespace ,$1 ,$3) ,$4)
+              )
 
    ;; ;; Variables are places that store values.
    ;; ;; There are three kinds of variables in Lua:
@@ -347,14 +353,14 @@
              (misc-exp expt misc-val) : `(expt ,$1 ,$3)
              (misc-val) : $1)
    (misc-val (lparen misc-exp rparen) : $2
-             ;; NOTE: exp has func according to Lua spec, or you can't define
-             ;;       functions in the program.
-             (anonymous-func) : $1
              (prefix-exp) : $1
+             (nil) : '(marker nil)
+             (boolean) : $1
+             (number) : `(number ,$1)
+             (string) : `(string ,$1)
+             ;; NOTE: exp has anonymous func according to Lua spec,
+             ;;       or you can't define functions in the program.
+             (anonymous-func) : $1
              ;; NOTE: the same as table-constructor
              (table-constructor) : $1
-             (number) : `(number ,$1)
-             (boolean) : $1
-             (string) : `(string ,$1)
-             (nil) : '(marker nil)
              (tri-dots) : '(tri-dots))))
