@@ -69,14 +69,14 @@
    ;;       by bottom-up principle. Maybe looks strange from the common grammar.
    ;;       Any problems could be solved in Dragon Book.
 
+   ;; NOTE: Lua grammar doesn't accept exp as chunk directly,
+   ;;       you have to use assign or function on exp,
+   ;;       say, a=1+2 or print(1+2),
+   ;;       1+2 will cause a syntax error.
+
    ;; The unit of compilation of Lua is called a chunk.
    ;; Syntactically, a chunk is simply a block:
-   (chunk (block) : $1
-          ;; NOTE: Lua grammar doesn't accept exp as chunk directly,
-          ;;       you have to use assign or function on exp,
-          ;;       say, a=1+2 or print(1+2),
-          ;;       1+2 will cause a syntax error.
-          (*eoi*) : *eof-object*)
+   (chunk (block) : $1)
 
    (terminator () : '()
                (semi-colon) : '())
