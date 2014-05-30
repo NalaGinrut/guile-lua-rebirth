@@ -20,32 +20,37 @@
             ;; Arith operation
             lua-add lua-minus lua-multi lua-div lua-mod lua-expt
             ;; Logical operation
-            lua-lt lua-eq lua-gt lua-geq lua-leq))
+            lua-lt lua-eq lua-gt lua-geq lua-leq
+
+            lua-print))
+
+;; TODO: for better implementation and type checking, it's better
+;;       not to use Scheme primitive directly, as possible.
+
+
+(define (lua-print x)
+  ;;(display x)(newline)
+  `(call (primitive display) ,x))
 
 (define (lua-type x) (->type x))
 
 (define (lua-arith op x y)
-  (op (->number x) (->number y)))
+  `(call (primitive ,op) ,x ,y))
 
-(define (lua-add x y) (lua-arith + x y))
-(define (lua-minus x y) (lua-arith - x y))
-(define (lua-multi x y) (lua-arith * x y))
-(define (lua-div x y) (lua-arith / x y))
-(define (lua-mod x y) (lua-arith modulo x y))
-(define (lua-expt x y) (lua-arith expt x y))
+(define (lua-add x y) (lua-arith '+ x y))
+(define (lua-minus x y) (lua-arith '- x y))
+(define (lua-multi x y) (lua-arith '* x y))
+(define (lua-div x y) (lua-arith '/ x y))
+(define (lua-mod x y) (lua-arith 'modulo x y))
+(define (lua-expt x y) (lua-arith 'expt x y))
 
 ;; return value is guile-boolean 
-(define (lua-compare compr x y) 
-  (let ((xt (lua-type x))
-        (yt (lua-type y)))
-    (cond
-     ((equal? xt yt) ; x and y has same type
-      ((get-compr-of-type xt compr) (->object x) (->object y)))
-     (else
-      (error "attempt to compare ~a with ~a" xt yt)))))
+;; FIXME: add type checking
+(define (lua-compare compr x y)
+  `(call (primitive ,compr) ,x ,y))
 
-(define (lua-lt x y) (lua-compare 'lt x y))
-(define (lua-eq x y) (lua-compare 'eq x y))
-(define (lua-gt x y) (lua-compare 'gt x y))
-(define (lua-geq x y) (lua-compare 'geq x y))
-(define (lua-leq x y) (lua-compare 'leq x y))
+(define (lua-lt x y) (lua-compare '< x y))
+(define (lua-eq x y) (lua-compare 'equal? x y))
+(define (lua-gt x y) (lua-compare '> x y))
+(define (lua-geq x y) (lua-compare '>= x y))
+(define (lua-leq x y) (lua-compare '<= x y))
