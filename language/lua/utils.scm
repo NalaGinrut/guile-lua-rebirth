@@ -32,7 +32,6 @@
             ->fixop
             %>
             debug-it
-	    pmatch/source
 	    
 	    new-stack
 	    new-queue
@@ -52,7 +51,11 @@
 
 	    make-compiler
 	    make-file-compiler
-	    make-token-checker))
+	    make-token-checker
+
+            ->lua
+            @impl
+            @impv))
 
 (define (location x)
   (and (pair? x)
@@ -106,16 +109,8 @@
   (apply func args))
 (define (debug-it func . args)
   `(,(procedure-name func) ,@args))
-(define %> (make-parameter normal-compute))
-
-(define-syntax-rule (pmatch/source x clause ...)
-  (let ((x x))
-    (let ((res (pmatch x
-                 clause ...)))
-      (let ((loc (location x)))
-        (if loc
-            (set-source-properties! res (location x))))
-      res)))
+(define %%> (make-parameter normal-compute))
+(define %> (%%>))
 
 (define new-stack make-q)
 (define new-queue make-q)
@@ -165,3 +160,12 @@
       ((slim) (map lexical-token-category tokens))
       ((all) tokens)
       (else (error make-token-checker "wrong mode" mode))))))
+
+(define (->lua x)
+  (string->symbol (string-append "lua-" x)))
+
+(define-syntax-rule (@impv sym)
+  (module-ref (resolve-module '(language lua impl)) sym))
+
+(define-syntax-rule (@impl func args ...)
+  ((@impv func) args ...))
