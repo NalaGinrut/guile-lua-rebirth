@@ -46,7 +46,7 @@
     ("/" . div)
     ("%" . mod)
     ("^" . expt)))
-    
+
 (define *relational-op*
   '(("==" . eq)
     ("~=" . neq)
@@ -92,7 +92,7 @@
    ((is-op-sign1? last)
     (not (is-op-sign1? c)))
    (else #t)))
-  
+
 (define-syntax-rule (punc->symbol c)
   (assoc-ref *punctuations* (string c)))
 
@@ -111,7 +111,7 @@
 
 (define *reserved-words*
   '(return function end if then elseif else true false nil or and
-    do while repeat until local for break in not))
+           do while repeat until local for break in not))
 
 (define (is-reserved-word? str)
   (and=> (memq (string->symbol str) *reserved-words*) car))
@@ -273,7 +273,7 @@
      (else ;; seems can't occur since it'd be a line-comment 
       (lex-error "No! This can't happen!" 
                  (port-source-location port) #f)))))
-   
+
 (define already-in-the-comment #f)
 
 (define (skip-lua-comment port)
@@ -378,67 +378,63 @@
         (unread-char c port) ; return back the char
         ;;(unread-char #\] port) ; don't need it
         (return port (punc->symbol c) #f)))) ; return the punc as token
-    (else
-     (cond
-      ((is-id-head? c)
-       (receive (cat val)
-           (read-lua-identifier port)
-         (set! last-token 'id)
-         (return port cat val)))
-      (else (lex-error "Invalid token!" (port-source-location port) c)))))))
+     (else
+      (cond
+       ((is-id-head? c)
+        (receive (cat val)
+            (read-lua-identifier port)
+          (set! last-token 'id)
+          (return port cat val)))
+       (else (lex-error "Invalid token!" (port-source-location port) c)))))))
 
-(define lua-tokenizer
-  (lambda (port)
+(define (test-lua-tokenizer port)
+  (let ((next (make-lua-tokenizer port)))
     (let lp ((out '()))
-      (let ((tok (next-token port)))
+      (let ((tok (next)))
         (if (eq? tok '*eoi*)
             (reverse! out)
             (lp (cons tok out)))))))
 
 (define (make-lua-tokenizer port)
- (let ((eoi? #f)
-       (stack (new-stack)))
-   (lambda ()
-     (if eoi?
-         '*eoi*
-         (let ((tok (next-token port)))
-           (case (if (lexical-token? tok) (lexical-token-category tok) tok)
-             ((lparen)
-              (stack-push! stack tok)) ; ready to check parens
-             ((rparen) ; rparen fit
-              (if (and (not (stack-empty? stack))
-                       (eq? (lexical-token-category (stack-top stack)) 'lparen))
-                  (stack-pop! stack)
-                  (lex-error "unexpected right parenthesis"
-			     (lexical-token-source tok)
-			     #f)))
-             ((lbracket)
-              (stack-push! stack tok)) ; ready to check brackets
-             ((rbracket) ; rbracket fit
-              (if (and (not (stack-empty? stack))
-                       (eq? (lexical-token-category (stack-top stack)) 'lbracket))
-                  (stack-pop! stack)
-                  (lex-error "unexpected right bracket"
-			     (lexical-token-source tok)
-			     #f)))
-             ((lbrace)
-              (stack-push! stack tok)) ; ready to check braces
-             ((rbrace) ; rbrace fit
-              (if (and (not (stack-empty? stack))
-                       (eq? (lexical-token-category (stack-top stack)) 'lbrace))
-                  (stack-pop! stack)
-                  (lex-error "unexpected right brace"
-			     (lexical-token-source tok)
-			     #f)))
-             ;; NOTE: this checker promised the last semi-colon before eof will 
-             ;;       return '*eoi* directly, or we have to press EOF (C-d) to 
-             ;;       end the input.
-             ;;       BUT I WONDER IF THERE'S A BETTER WAY FOR THIS!
-             ((semi-colon *eoi*)
-              ;; FIXME:
-              ;; Lua doesn't need semi-colon as statment-ending
-              (set! eoi? (stack-empty? stack))))
-           tok)))))
+  (define (check top tok)
+    (eq? (lexical-token-category top)
+         (case (lexical-token-category tok)
+           ((rparen) 'lparen)
+           ((rbracket) 'lbracket)
+           ((rbrace) 'lbrace)
+           (else (error check "wrong tok" tok)))))
+  (let ((eoi? #f)
+        (stack (new-stack)))
+    (lambda ()
+      (if eoi?
+          '*eoi*
+          (let ((tok (next-token port)))
+            (case (if (lexical-token? tok) (lexical-token-category tok) tok)
+              ((lparen lbracket lbrace)
+               (stack-push! stack tok)) ; ready to check
+              ((rparen rbracket rbrace) ; fit
+               (if (and (not (stack-empty? stack))
+                        (check (stack-top stack) tok))
+                   (stack-pop! stack)
+                   (lex-error "unexpected close"
+                              (lexical-token-source tok)
+                              #f)))
+              ;; NOTE: this checker promised the last semi-colon before eof will 
+              ;;       return '*eoi* directly, or we have to press EOF (C-d) to 
+              ;;       end the input.
+              ;;       BUT I WONDER IF THERE'S A BETTER WAY FOR THIS!
+              ((semi-colon *eoi*)
+               ;; (format #t "hit: ~a,~a~%" tok (stack-empty? stack))
+               ;; FIXME:
+               ;; It's unnecessary for Lua to get semi-colon as chunk-ending.
+               ;; The name of game is "how to detect chunk-ending".
+               ;; The original Lua REPL will check each token to complete a chunk.
+               ;; An explict way is to pass each token to the parser and catch the
+               ;; exception.
+               ;; It's better to split parser into repl-parser and compile-parser.
+               ;; Or detect if it's in a REPL. (take advantage of *repl-stack* ?)
+               (set! eoi? (stack-empty? stack))))
+            tok)))))
 
 (define (debug-lua-tokenizer src)
-  ((make-token-checker lua-tokenizer) src))
+  ((make-token-checker test-lua-tokenizer) src))
