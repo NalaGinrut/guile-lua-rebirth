@@ -85,7 +85,7 @@
     ;; arithmatic op
     (`(add ,x ,y)
      (lua-add (comp x e) (comp y e)))
-    (`(minu ,x ,y)
+    (`(minus ,x ,y)
      (lua-minus (comp x e) (comp y e)))
     (`(multi ,x ,y)
      (lua-multi (comp x e) (comp y e)))
