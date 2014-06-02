@@ -57,29 +57,35 @@
       (<lua-type>-name obj)
       (error lua-typeof "Fatal error! Blame compiler writer or modifier!" obj)))
 
-(define (get-types x . y)
-  (let lp((n y) (ret (list (lua-typeof x))))
+(define (lua-type-map proc x . y)
+  (let lp((n y) (ret (list (proc x))))
     (cond
      ((null? n) (reverse! ret))
-     (else (lp (cdr n) (cons (lua-typeof (car n)) ret))))))
+     (else (lp (cdr n) (cons (proc (car n)) ret))))))
+
+(define (get-types/vals x . y)
+  (apply lua-type-map lua-type/value x y))
+
+(define (get-types x . y)
+  (apply lua-type-map lua-typeof x y))
 
 ;; define an implemantation related low-level operation with type checking.
 ;; e.g:
 ;; (::define (add x y)
 ;;  ((int int) -> int)
-;;  (apply + x y))
+;;  (+ x y))
 (define-syntax ::define
   (syntax-rules (->)
-    ((_ (op x y) ((type type* ...) -> func-type) body ...)
-     (::define op ((type type* ...) -> func-type) (lambda (x y) body ...)))
-    ((_ op ((type type* ...) -> func-type) (lambda (x y) body ...))
-     (define (op x . y)
-       (let ((ret (match (apply get-types x y)
-                    ((type type* ...)
+    ((_ (op x x* ...) ((type type* ...) -> func-type) body ...)
+     (::define op ((type type* ...) -> func-type) (lambda (x x* ...) body ...)))
+    ((_ op ((type type* ...) -> func-type) (lambda (x x* ...) body ...))
+     (define (op x x* ...)
+       (let ((ret (match (get-types x x* ...)
+                    ('(type type* ...)
                      body ...)
                     (else (error "Error while args type checking!"
-                                 op type type* ... x y)))))
+                                 op 'type 'type* ... x x* ...)))))
          (if (eq? (lua-typeof ret) 'func-type)
              ret
              (error "Error while ret type checking!"
-                    op func-type ret)))))))
+                    op 'func-type ret)))))))
