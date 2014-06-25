@@ -17,10 +17,13 @@
   #:use-module (language lua utils)
   #:use-module (language lua parser)
   #:use-module (language lua scope)
-  #:use-module (language lua impl)
+  ;;#:use-module (language lua impl)
   #:use-module (language tree-il)
   #:use-module (ice-9 match)
-  #:export (compile-tree-il))
+  #:export (compile-tree-il
+            ->lambda
+            ->gensym
+            tree-il-define))
 
 (define (lua-init)
   #t) ;; nothing to do yet.
@@ -115,3 +118,72 @@
      (@impl (->lua func) (comp args e)))
     ;; TODO: finish the rest
     (else (error comp "invalid src" src))))
+
+(define (->gensym x)
+  `(const ,(gensym (string-append (symbol->string x) " "))))
+
+;; (let (x) (m+1) ((toplevel +)) (lexical x m+1))
+;; m+1 matters, x seems useless?
+;; (define func (lambda () (lambda-case (((o) #f #f #f () (o1)) (call (toplevel +) (const 1) (lexical o o1))))))
+;; o1 matters, so they have to be the same
+
+(define *toplevel-ops* '())
+
+(define (is-toplevel-op? o)
+  ;; NOTE: the-root-module only contains primitives, which is proper for this function.
+  (or (defined? o the-root-module)
+      (memq o *toplevel-ops*)))
+
+(define *default-toplevel-module* (resolve-module '(guile-user)))
+
+(define (is-toplevel-var? v)
+  ;; NOTE: If you define a var in toplevel, you can't find it in the-root-module,
+  ;;       which is for primitives.
+  (defined? v *default-toplevel-module*))
+
+(define (->scope op pred)
+  (cond
+   ((pred op) `(toplevel ,op))
+   (else `(lexical ,op ,op))))
+
+(define (->op op) (->scope op is-toplevel-op?))
+(define (->var var) (->scope var is-toplevel-var?))
+(define (->val v)
+  (match v
+    ((? self-evaluating? val) `(const ,val))
+    (else (->var v))))
+
+(define (body-expander . body)
+  (match body
+    (() '())
+    (((op args ...) rest ...) `((call ,(->op op) ,@(map ->val args) ...) ,@(apply body-expander rest)))
+    (else "no")))
+
+;; The usage of lambda in tree-il:
+;; (lambda-case ((req opt rest kw inits gensyms) body) [alternate])
+;; 1. (lambda () 1)
+;; e.g: (lambda () (lambda-case ((() #f #f #f () ()) (const 1))))
+;;
+;; 2. (lambda (x) 3) 
+;; e.g: (lambda () (lambda-case (((x) #f #f #f () ((call (primitive gensym) (const "x ")))) (const 3))))
+;;
+;; 3. (lambda (. y) 3)
+;; e.g: (lambda () (lambda-case ((() #f y #f () ((call (primitive gensym) (const "x ")))) (const 3))))
+;;
+;; 4. (lambda (x y . z) 3)
+;; e.g: (lambda () (lambda-case (((x y) #f z #f () ((const x1) (const y1) (const z2))) (const 3))))
+;;
+;; *Maybe* we don't need to support kargs (in Lua), hmm...dunno
+(define-syntax ->lambda
+  (syntax-rules ()
+    ((_ (arg arg* ...) body ...)
+     `(lambda ()
+        (lambda-case
+         (((arg arg* ...) #f #f #f () ,(map ->gensym `(arg arg* ...))) (body-expander body ...)))))
+    ((_ (arg arg* ... . args) body ...)
+     `(lambda ()
+        (lambda-case
+         (((arg arg* ...) #f args #f () ,(map ->gensym `(arg arg* ... args))) (body-expander body ...)))))))
+    
+(define-syntax-rule (tree-il-define name what)
+  `(define name ,what))
