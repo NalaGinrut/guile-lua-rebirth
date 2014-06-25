@@ -17,7 +17,8 @@
   #:use-module (language lua utils)
   #:use-module ((rnrs) #:select (define-record-type))
   #:use-module (ice-9 match)
-  #:export (<lua-type>-name
+  #:export (<lua-type>?
+            <lua-type>-name
             <lua-type>-value
 
             ;; gen types
@@ -73,8 +74,8 @@
   (memq (lua-typeof obj) '(number string booleans table nil)))
 
 (define-macro (new-type type)
-  `(lambda args
-     (apply ,(symbol-append 'make-<lua- type '>) (quote #,type) args)))
+  #`(lambda args
+     (apply #,(symbol-append 'make-<lua- type '>) (quote #,type) args)))
 
 ;; NOTE: Nil and Booleans should be unique in the whole environment.
 (define gen-nil (make-parameter ((new-type nil))))
