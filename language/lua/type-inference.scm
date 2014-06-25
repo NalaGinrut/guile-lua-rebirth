@@ -15,84 +15,18 @@
 
 (define-module (language lua type-inference)
   #:use-module (language lua utils)
-  #:use-module ((rnrs) #:select (define-record-type))
+  #:use-module (language lua peval)
+  #:use-module (language lua types)
   #:use-module (ice-9 match)
   #:export (::define
-            lua-<type>-name
-            lua-<type>-value
-
-            ))
-
-;; Lua supports duck typing as part of the Metatable weak-typing system.
-;; Any reference to a table's member function is checked dynamically at run-time.
-;; If an object does not implement the requested function, a run-time error is
-;; produced. If a data member is requested but does not exist, a nil value is
-;; returned.
-
-;; There're 8 types in Lua:
-;; ----------------------------
-;; Nil
-;; Booleans
-;; Numbers
-;; Strings
-;; Tables
-;; Functions
-;; Userdata and Threads
-;; ----------------------------
-
-(define-record-type <lua-type>
-  (fields name value))
-
-(define-record-type <lua-nil> (parent <lua-type>))
-(define-record-type <lua-boolean> (parent <lua-type>))
-(define-record-type <lua-number> (parent <lua-type>))
-(define-record-type <lua-string> (parent <lua-type>)
-  (fields size))
-(define-record-type <lua-table> (parent <lua-type>)
-  (fields size))
-(define-record-type <lua-function> (parent <lua-type>)
-  (fields arity args return-type))
-
-;; NULL is a special type to indicate `Nothing' or `unspecified'
-;; NOTE: Don't confuse with Nil
-(define-record-type <lua-null> (parent <lua-type>))
-
-(define-macro (new-type type)
-  `(lambda args
-     (apply ,(symbol-append 'make-<lua- type '>) (quote #,type) args)))
-
-;; NOTE: Nil and Booleans are optimized to be unique in the whole environment.
-(define gen-nil (make-parameter ((new-type 'nil))))
-(define gen-true (make-parameter ((new-type 'boolean) 'true)))
-(define gen-false (make-parameter ((new-type 'boolean) 'false)))
-;; and Null
-(define gen-null (make-parameter ((new-type 'null))))
-
-(define gen-number (new-type 'number))
-(define gen-string (new-type 'string))
-(define gen-table (new-type 'table))
-(define gen-function (new-type 'function))
-
-(define (lua-typeof obj)
-  (if (<lua-type>? obj)
-      (<lua-type>-name obj)
-      (error lua-typeof "Fatal error! Blame compiler writer or modifier!" obj)))
-
-(define (lua-type-map proc x . y)
-  (let lp((n y) (ret (list (proc x))))
-    (cond
-     ((null? n) (reverse! ret))
-     (else (lp (cdr n) (cons (proc (car n)) ret))))))
-
-(define (get-types/vals x . y)
-  (apply lua-type-map lua-type/value x y))
-
-(define (get-types x . y)
-  (apply lua-type-map lua-typeof x y))
+            type-inference))
 
 (define *function-type-table* (make-hash-table))
 (define (ftt-add! f t) (hash-set! *function-type-table* f t))
 (define (ftt-ref f) (hash-ref *function-type-table* f))
+
+(define (get-types x . y)
+  (apply lua-type-map lua-typeof x y))
 
 ;; define an implemantation related low-level operation with type checking.
 ;; e.g:
@@ -119,8 +53,8 @@
 
 ;; --- Runtime Type Checking ---
 ;; 1. We use DFA for the type checking.
-;; 2. Because all the ops should be translate to primitives, so we only
-;;    consider the primitives type checking.
+;; 2. Because all the ops should be translate to primitives, so we
+;;    consider the type checking for primitives only.
 ;; 3. For intermediate functions, we use ::define for helping.
 
 (define (make-type-ops from to ops)
@@ -129,7 +63,7 @@
 (define arith-ops '(+ - * / ^ %))
 (define-syntax-rule (arith-op? op) (memq op arith-ops))
 
-(define string-ops '(.. #))
+(define string-ops '(concat hash))
 
 (define number->number-ops
   (make-type-ops 'number 'number arith-ops))
@@ -154,7 +88,7 @@
   (error "Type-checking error: attempt to perform arithmetic on a ~a value" (lua-typeof o)))
 
 (define (lua-arith/number op x y)
-  `(number ,(peval (list (symbol-append 'arith- op) x y)))) 
+  `(number ,(peval (list (symbol-append 'arith- op) x y))))
 
 (define (lua-arith/string op x y)
   (let ((xx (string->number x))
@@ -190,28 +124,19 @@
     ((tx ty '-> tf)
      (and (or (eq? tx (lua-typeof x)) (err x))
           (or (eq? ty (lua-typeof y)) (err y)))
-     ;; TODO: add partial evaluator
-     (call-arith-op/typed tx ty op x y))
-    (else (call-arith-op op x y))))
+     `(,tf ,(call-arith-op/typed tx ty op (peval x) (peval y))))
+    (else (error "Type-checking: No type inference rule was registered!" op)))) 
 
-(define-macro (expect type x)
-  #`(let ((t (lua-typeof x)))
-      (eq? (#,(symbol-append '<lua- t '>?) x) type)))
+(define-syntax-rule (->lua-type? t)
+  (primitive-eval (symbol-append '<lua- t '>?)))
+
+(define-syntax-rule (expect type x)
+  ((->lua-type? type) x))
 
 ;; NOTE: Type inference pass should never break the AST. It should keep the
 ;;       structure of AST as possible. The work of this function is to
 ;;       mark & infer all the types, include expr/literal/id. 
 (define (type-inference node)
-  (define-syntax-rule (expect who mate)
-    ;; TODO
-    )
-  (define (arith-op-ti op x y)
-    (let ((tx (type-inference x))
-          (ty (type-inference y)))
-      (and (<lua-number>? tx)
-           (expect <lua-number>? ty))
-      ;; TODO
-      ))
   ;;(display src)(newline)
   (match node
     ;; Literals
@@ -224,5 +149,6 @@
     
     ;; Primitives
     (((? arith-op? op) x y)
-     (check/arith-op op (type-inference x) (type-inference y)))
+     (type-inference (check/arith-op op (type-inference x) (type-inference y))))
+
   ))
