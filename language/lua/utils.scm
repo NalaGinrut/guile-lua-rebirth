@@ -20,6 +20,9 @@
   #:use-module (system base compile)
   #:use-module (system base lalr)
   #:use-module (system base pmatch)
+  #:use-module (rnrs records syntactic)
+  #:use-module (rnrs records procedural)
+  #:use-module (rnrs records inspection)
   #:export (location
 	    unget-char1
 	    syntax-error
@@ -55,7 +58,9 @@
 
             ->lua
             @impl
-            @impv))
+            @impv
+
+            ->list))
 
 (define (location x)
   (and (pair? x)
@@ -169,3 +174,24 @@
 
 (define-syntax-rule (@impl func args ...)
   ((@impv func) args ...))
+
+(define (->list n) (and n (record->list n)))
+
+(define* (record->list record #:optional (alist #f))
+  (define (record-ref rtd k)
+    ((record-accessor rtd k) record))
+  (define (gen-val rtd k i)
+    (let ((v (record-ref rtd i)))
+      (if alist
+          (cons k v)
+          v)))
+  (let* ((rtd (record-rtd record))
+         (p (record-type-parent rtd))
+         (name (record-type-name rtd))
+         (pfields (if p (vector->list (record-type-field-names p)) '()))
+         (plen (if p (length pfields) 0))
+         (fields (vector->list (record-type-field-names rtd)))
+         (len (length fields)))
+    (append `(,name 
+              ,@(map (lambda (k i) (gen-val p k i)) pfields (iota plen))
+              ,@(map (lambda (k i) (gen-val rtd k i)) fields (iota len))))))
