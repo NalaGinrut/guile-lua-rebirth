@@ -136,6 +136,12 @@
 
 (define *default-toplevel-module* (resolve-module '(guile-user)))
 
+;; FIXME: It's useless to check toplevel/primitives.
+;;        First, Guile does this for you. Second, the info is nothing at the end.
+;; 1. maintain lexical envs
+;; 2. pass it in to help to check lexical symbols.
+;; 3. We DON'T need to check toplevel but lexical to confirm what instruction to generate.
+   
 (define (is-toplevel-var? v)
   ;; NOTE: If you define a var in toplevel, you can't find it in the-root-module,
   ;;       which is for primitives.
