@@ -145,7 +145,7 @@
    (repeatition (for assignment) : `(for ,$2))
 
    (assignment (name assign range) : `(assign ,$1 ,$3)
-              (name-list in exp-list) : `(assign ,$1 ,$3))
+               (name-list in exp-list) : `(assign ,$1 ,$3))
 
    (conds (cond-list) : $1
           (cond-list else block) : `(,@$1 else ,$3))
