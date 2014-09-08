@@ -49,6 +49,7 @@
   (make-lua-env #f ; top-level has no higher level
                 (new-symbol-table)))
 
+;; FIXME: do we really need this??
 (define current-top-level-environment
   (make-parameter *top-level-environment*))
 
