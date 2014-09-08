@@ -13,13 +13,31 @@
 ;;  You should have received a copy of the GNU General Public License
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+;; ------------------------------------------------------------------------
+;; NOTE: Although there's type-checks in Guile backend already. We still
+;;       need to do a simple Lua specific type-inference here. There're
+;;       several obvious purposes for that, e.g, Lua supports arithmatic
+;;       operation between Number and String, we have to check and cast
+;;       before generating primitives for the operation. 
 (define-module (language lua type-inference)
   #:use-module (language lua utils)
-  #:use-module (language lua peval)
+  #:use-module (language lua optimize)
   #:use-module (language lua types)
+  #:use-module (language lua scope)
   #:use-module (ice-9 match)
   #:export (::define
             type-inference))
+
+;; TODO: How to deal with `unknown' type? It's meanning `I don't know
+;;       what type it is'.
+(define (type-guessing obj)
+  (cond
+   ((lua-number? obj) `(number ,obj))
+   ((lua-string? obj) `(string ,obj))
+   ((lua-boolean? obj) `(boolean ,obj))
+   ((lua-nil? obj) '(marker nil)) 
+   ;;((lua-table? obj) `(table ,obj))
+   (else `(unknown ,obj))))
 
 (define *function-type-table* (make-hash-table))
 (define (ftt-add! f t) (hash-set! *function-type-table* f t))
@@ -84,48 +102,65 @@
 
 ;; -- Compile time type checking --
 
+(define (optimize x env enable?)
+  (if enable?
+      (lua-optimize x env)
+      x))
+
 (define (err o)
   (error "Type-checking error: attempt to perform arithmetic on a ~a value" (lua-typeof o)))
 
-(define (lua-arith/number op x y)
-  `(number ,(peval (list (symbol-append 'arith- op) x y))))
+(define (lua-arith/number op x y env optimizing?)
+  `(number ,(optimize (list (symbol-append 'arith- op) x y) env optimizing?)))
 
-(define (lua-arith/string op x y)
+(define (lua-arith/string op x y env optimizing?)
   (let ((xx (string->number x))
         (yy (string->number y)))
     (and (or xx (err xx)) (or yy (err yy)))
-    (lua-arith/number op xx yy)))
+    (lua-arith/number op xx yy env optimizing?)))
 
 ;; NOTE: x is always string
-(define (lua-arith/numstr op x y)
+(define (lua-arith/numstr op x y env optimizing?)
   (let ((xx (string->number x)))
     (or xx (err xx))
-    (lua-arith/number op xx y)))
+    (lua-arith/number op xx y env optimizing?)))
 
 (define-syntax-rule (->lua-op category type)
   (primitive-eval (symbol-append 'lua- category '/ type)))
 
-(define (call-arith-op/typed tx ty op x y)
+(define (call-arith-op/typed tx ty op x y env optimizing?)
   (match (list tx ty)
     ((number number)
-     ((->lua-op 'arith 'number) op x y))
+     ((->lua-op 'arith 'number) op x y env optimizing?))
      ((string string)
-      ((->lua-op 'arith 'string) op x y))
+      ((->lua-op 'arith 'string) op x y env optimizing?))
      ((string number)
-      ((->lua-op 'arith 'numstr) op x y))
+      ((->lua-op 'arith 'numstr) op x y env optimizing?))
      ((number string)
-      ((->lua-op 'arith 'numstr) op y x))
+      ((->lua-op 'arith 'numstr) op y x env optimizing?))
      (else
       ;; Shouldn't be here! Because all the arith-op should be registered.
-      (error "Type-checking: invalid type for arithmetic" (list tx ty) op))))
+      (error "Type-checking: invalid type for arithmetic" (list tx ty) op optimizing?))))
 
-(define (check/arith-op op x y)
+(define (check/arith-op op x y env optimizing?)
   (match (ftt-ref op)
     ((tx ty '-> tf)
      (and (or (eq? tx (lua-typeof x)) (err x))
           (or (eq? ty (lua-typeof y)) (err y)))
-     `(,tf ,(call-arith-op/typed tx ty op (peval x) (peval y))))
-    (else (error "Type-checking: No type inference rule was registered!" op)))) 
+     (let ((xx (lua-optimize x env optimizing?))
+           (yy (lua-optimize y env optimizing?)))
+     `(,tf ,(call-arith-op/typed tx ty op xx yy))))
+    (else (error "Type-checking: No such arith rule was registered!" op)))) 
+
+(define (check/cond cond env optimizing?)
+  (let ((e (lua-optimize cond env optimizing?)))
+    (cond
+     ((is-immediate-object? e) (type-guessing e))
+     (else e))))
+
+(define (try-to-reduce-func-call fname fargs env optimizing?)
+  ;; TODO
+  #t)
 
 (define-syntax-rule (->lua-type? t)
   (primitive-eval (symbol-append '<lua- t '>?)))
@@ -135,8 +170,10 @@
 
 ;; NOTE: Type inference pass should never break the AST. It should keep the
 ;;       structure of AST as possible. The work of this function is to
-;;       mark & infer all the types, include expr/literal/id. 
-(define (type-inference node)
+;;       mark & infer all the types, include expr/literal/id.
+;; TODO: now we don't use optimizing, do it when type-inference is finished. 
+;; FIXME: if we don't enable partial evaluating, some inference may not be done.
+(define* (type-inference node env #:key (optimizing? #f))
   ;;(display src)(newline)
   (match node
     ;; Literals
@@ -145,10 +182,25 @@
     ('(boolean false) (gen-false))
     (`(number ,x) (gen-number x))
     (`(string ,x) (gen-string x))
-    (`(scope ,n) `(scope ,(type-inference n)))
+    (`(scope ,n) `(scope ,(type-inference (new-scope env) optimizing?)))
     
     ;; Primitives
     (((? arith-op? op) x y)
-     (type-inference (check/arith-op op (type-inference x) (type-inference y))))
+     (let ((xx (type-inference x env))
+           (yy (type-inference y env)))
+       (type-inference (check/arith-op op xx yy env) env optimizing?)))
 
-  ))
+    ;; conditions
+    (('if _ ...)
+     (check/cond node env optimizing?))
+
+    ;; functions
+    (('func-call fname fargs)
+     (try-to-reduce-func-call fname fargs env optimizing?))
+
+    (else (error type-inference "Invalid type encountered!" node))))
+
+;; If true, it's a static type(confirmed).
+;; Or it has to be dynamic type, binding-time engineering is needed for optimizing it.
+(define (is-type-confirmed? obj)
+  (memq (car obj) '(marker boolean number string)))
