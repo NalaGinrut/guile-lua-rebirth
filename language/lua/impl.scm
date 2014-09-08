@@ -16,6 +16,8 @@
 (define-module (language lua impl)
   #:use-module (language lua utils)
   #:use-module (language lua base)
+  #:use-module (language lua type-checking)
+  #:use-module (ice-9 match)
   #:export (lua-type 
             ;; Arith operation
             lua-add lua-minus lua-multi lua-div lua-mod lua-expt
@@ -24,18 +26,32 @@
 
             lua-print))
 
-;; TODO: for better implementation and type checking, it's better
-;;       not to use Scheme primitive directly, as possible.
+;; TODO: Although it's reasonable to implement new primitives for better type checking,
+;;       we have no any chance to do that. Because it's necessary to modify VM to add
+;;       new primitives. So we have to convert all the lua-specific-primitives to proper
+;;       Guile primitives.
 
-
+;; TODO: how to print table and function?
 (define (lua-print x)
   ;;(display x)(newline)
   `(call (primitive display) ,x))
 
-(define (lua-type x) (->type x))
+(define (emit-tree-il-from-function obj)
+  (match obj
+    (($ <lua-function> ($ <lua-type> _ name value)  
+`(call (primitive ,op) (const ,x) (const ,y))))
+
+(define-macro (make-low-level-op op)
+  (::define (%lua-num-num-arith x y)
+   ((number number) -> (number))
+   (try-partial-evaluate op x y)))
 
 (define (lua-arith op x y)
-  `(call (primitive ,op) ,x ,y))
+  (match (get-types/vals x y)
+    (`((number ,n1) (number ,n1))
+     (%lua-num-num-arith op n1 n2))
+    ((or '(string number) '(number string))
+     (
 
 (define (lua-add x y) (lua-arith '+ x y))
 (define (lua-minus x y) (lua-arith '- x y))
