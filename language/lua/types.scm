@@ -21,6 +21,10 @@
             <lua-type>-name
             <lua-type>-value
 
+            <lua-variable>?
+            <lua-variable>-name
+            <lua-variable>-tag
+
             ;; gen types
             gen-nil
             gen-true
@@ -33,6 +37,14 @@
 
             lua-typeof
             lua-type-map
+
+            lua-true?
+            lua-false?
+            
+            lua-number?
+            lua-string?
+            lua-boolean?
+            lua-nil?
 
             is-immediate-object?))
 
@@ -67,11 +79,16 @@
   (fields arity args return-type))
 
 ;; NULL is a special type to indicate `Nothing' or `unspecified'
-;; NOTE: Don't confuse with Nil
+;; NOTE: Don't be confused with Nil.
 (define-record-type <lua-null> (parent <lua-type>))
 
+;; Lua variable
+(define-record-type <lua-variable>
+  (fields name tag))
+
 (define (is-immediate-object? obj)
-  (memq (lua-typeof obj) '(number string booleans table nil)))
+  (and (<lua-type>? obj)
+       (memq (lua-typeof obj) '(number string booleans table nil))))
 
 (define-macro (new-type type)
   #`(lambda args
@@ -100,5 +117,18 @@
      ((null? n) (reverse! ret))
      (else (lp (cdr n) (cons (proc (car n)) ret))))))
 
+(define-syntax-rule (lua-boolean-check obj val)
+  (and (<lua-boolean>? obj) (eq? (<lua-type>-value obj) val)))
+
+(define (lua-true? obj) (lua-boolean-check obj 'true))
+(define (lua-false? obj) (lua-boolean-check obj 'false))
+
+(define (lua-number? obj)
+  (number? obj))
+(define (lua-string? obj)
+  (string? obj))
+(define (lua-boolean? obj)
+  
+  
 ;;(define (get-types/vals x . y)
 ;;  (apply lua-type-map lua-type/value x y))
