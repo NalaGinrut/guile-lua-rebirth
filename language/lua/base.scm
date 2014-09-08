@@ -13,11 +13,15 @@
 ;;  You should have received a copy of the GNU General Public License
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-(define-module (language lua impl)
+(define-module (language lua base)
   #:use-module (language lua utils)
-  #:use-module (language lua runtime)
-  #:export (->number get-compr-of-type ->type ->lua-boolean
-            ->guile-boolean ->object))
+  ;;#:use-module (language lua runtime)
+  #:export (->number
+            get-compr-of-type
+            ->type
+            ->lua-boolean
+            ->guile-boolean
+            ->object))
 
 (define *number-compr*
   `((eq  . ,=)
@@ -33,7 +37,7 @@
     (gt  . ,string>?)
     (leq . ,string<=?)
     (geq . ,string>=?)
-    (neq . ,(lambda (x y) (not (string=? x y))))))  
+    (neq . ,(lambda (x y) (not (string=? x y))))))
 
 ;; NOTE: since I use hash-table and recor-type to implement Lua table,
 ;;       so I think eq? is suitable for such comparing. Correct me if
@@ -42,14 +46,14 @@
   (case kind 
     ((eq) eq?) 
     ((neq) (lambda (x y) (not (eq? x y))))
-    (else (error "attempt to compare table with table"))))
- 
+    (else (error get-table-compr "attempt to compare table with table"))))
+
 (define (get-compr-of-type t kind)
-  (case t
-    (("number") (assoc-ref *number-compr* kind))
-    (("string") (assoc-ref *string-compr* kind))
-    (("table") (get-table-compr kind)
-    (else (error get-compr-of-type "Invalid type for comparing" t))))
+  (cond
+   ((string=? t "number") (assoc-ref *number-compr* kind))
+   ((string=? t "string") (assoc-ref *string-compr* kind))
+   ((string=? t "table") (get-table-compr kind))
+   (else (error get-compr-of-type "Invalid type for comparing" t))))
 
 (define (->type x) (value-type->string x))
 
@@ -59,7 +63,7 @@
    ((number? x) x)
    ((string? x) (string->number x))
    (else 
-    (error "attempt to perform arithmetic on a ~a value: ~a"
+    (error ->number "attempt to perform arithmetic on a ~a value: ~a"
            (->type x) x))))
 
 ;; only nil and false are FALSE
@@ -70,9 +74,9 @@
   (if x 'true 'false))
 
 (define (->object x)
-  (case (lua-type x)
-    (("number" "string") x)
-    (("boolean" "nil") (->boolean x))
-    (("function") (->function x))
-    (("corotine" "thread") (error "Doesn't support yet" x))
-    (else (error "Unknown object type" x))))
+  (match (lua-type x)
+    ((or "number" "string") x)
+    ((or  "boolean" "nil") (->boolean x))
+    ((or "function") (->function x))
+    ((or "corotine" "thread") (error "Doesn't support yet" x))
+    (else (error ->object "Unknown object type" x))))
