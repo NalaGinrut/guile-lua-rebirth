@@ -62,8 +62,8 @@
          (let ((ret (match (get-types x x* ...)
                       ('(type type* ...)
                        body ...)
-                    (else (error "Error while args type checking!"
-                                 op 'type 'type* ... x x* ...)))))
+                      (else (error "Error while args type checking!"
+                                   op 'type 'type* ... x x* ...)))))
            (if (eq? (lua-typeof ret) 'func-type)
                ret
                (error "Error while ret type checking!"
@@ -132,35 +132,38 @@
   (match (list tx ty)
     ((number number)
      ((->lua-op 'arith 'number) op x y env optimizing?))
-     ((string string)
-      ((->lua-op 'arith 'string) op x y env optimizing?))
-     ((string number)
-      ((->lua-op 'arith 'numstr) op x y env optimizing?))
-     ((number string)
-      ((->lua-op 'arith 'numstr) op y x env optimizing?))
-     (else
-      ;; Shouldn't be here! Because all the arith-op should be registered.
-      (error "Type-checking: invalid type for arithmetic" (list tx ty) op optimizing?))))
+    ((string string)
+     ((->lua-op 'arith 'string) op x y env optimizing?))
+    ((string number)
+     ((->lua-op 'arith 'numstr) op x y env optimizing?))
+    ((number string)
+     ((->lua-op 'arith 'numstr) op y x env optimizing?))
+    (else
+     ;; Shouldn't be here! Because all the arith-op should be registered.
+     (error "Type-checking: invalid type for arithmetic" (list tx ty) op optimizing?))))
 
 (define (check/arith-op op x y env optimizing?)
   (match (ftt-ref op)
     ((tx ty '-> tf)
      (and (or (eq? tx (lua-typeof x)) (err x))
           (or (eq? ty (lua-typeof y)) (err y)))
-     (let ((xx (lua-optimize x env optimizing?))
-           (yy (lua-optimize y env optimizing?)))
-     `(,tf ,(call-arith-op/typed tx ty op xx yy))))
+     (let ((xx (optimize x env optimizing?))
+           (yy (optimize y env optimizing?)))
+       `(,tf ,(call-arith-op/typed tx ty op xx yy))))
     (else (error "Type-checking: No such arith rule was registered!" op)))) 
 
 (define (check/cond cond env optimizing?)
-  (let ((e (lua-optimize cond env optimizing?)))
+  (let ((e (optimize cond env optimizing?)))
     (cond
      ((is-immediate-object? e) (type-guessing e))
      (else e))))
 
 (define (try-to-reduce-func-call fname fargs env optimizing?)
-  ;; TODO
-  #t)
+  (let* ((func (get-proper-func fname env))
+         (node (call-lua-func func fargs env)))
+    (if optimizing?
+        (optimize node env optimizing?)
+        node)))
 
 (define-syntax-rule (->lua-type? t)
   (primitive-eval (symbol-append '<lua- t '>?)))
@@ -183,7 +186,7 @@
     (`(number ,x) (gen-number x))
     (`(string ,x) (gen-string x))
     (`(scope ,n) `(scope ,(type-inference (new-scope env) optimizing?)))
-    
+
     ;; Primitives
     (((? arith-op? op) x y)
      (let ((xx (type-inference x env))
@@ -192,11 +195,11 @@
 
     ;; conditions
     (('if _ ...)
-     (check/cond node env optimizing?))
+     (type-inference (check/cond node env optimizing?) env optimizing?))
 
     ;; functions
     (('func-call fname fargs)
-     (try-to-reduce-func-call fname fargs env optimizing?))
+     (type-inference (try-to-reduce-func-call fname fargs env optimizing?) env optimizing?))
 
     (else (error type-inference "Invalid type encountered!" node))))
 
