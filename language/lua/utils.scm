@@ -60,7 +60,8 @@
             @impl
             @impv
 
-            ->list))
+            ->list
+            newsym))
 
 (define (location x)
   (and (pair? x)
@@ -195,3 +196,8 @@
     (append `(,name 
               ,@(map (lambda (k i) (gen-val p k i)) pfields (iota plen))
               ,@(map (lambda (k i) (gen-val rtd k i)) fields (iota len))))))
+
+;; Sometimes we need to apply gensym on a symbol rather than string,
+;; so this helper function could be useful.
+(define (newsym sym)
+  (gensym (symbol->string sym)))
