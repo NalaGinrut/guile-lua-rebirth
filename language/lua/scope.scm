@@ -16,6 +16,7 @@
 (define-module (language lua scope)
   #:use-module (language lua utils)
   #:use-module ((rnrs) #:select (define-record-type))
+  #:use-module (ice-9 match)
   #:export (lua-env
             lua-env?
             lua-env-higher-level-env
@@ -33,7 +34,9 @@
             lua-global-set!
             lua-global-ref
             
-            new-scope))
+            new-scope
+
+            get-proper-func))
 
 (define-record-type lua-env
   (fields 
@@ -78,3 +81,10 @@
 
 (define (new-scope e)
   (make-lua-env e (new-symbol-table)))
+
+(define (get-proper-func fname env)
+  (match fname
+    (`(id ,fn)
+     (or (lua-static-scope-ref env fn)
+         (throw 'lua-error "No such identifier in the scope" fn)))
+    (else (error get-proper-func "Invalid func name pattern!" fname))))
