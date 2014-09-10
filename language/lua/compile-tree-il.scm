@@ -80,9 +80,9 @@
     (('scope rest)
      ;;(display rest)(newline)
      (comp rest (new-scope e)))
-    (`(begin ,form)
+    (('begin form ...)
      (comp form e))
-    (`(begin . ,forms)
+    (('begin forms ...)
      `(begin ,@(map (lambda (x) (comp x e)) forms)))
 
     ;; arithmatic op
@@ -120,12 +120,32 @@
     (else (error comp "invalid src" src))))
 
 (define (->gensym x)
-  `(const ,(gensym (string-append (symbol->string x) " "))))
+  `(const ,(newsym x)))
 
-;; (let (x) (m+1) ((toplevel +)) (lexical x m+1))
-;; m+1 matters, x seems useless?
-;; (define func (lambda () (lambda-case (((o) #f #f #f () (o1)) (call (toplevel +) (const 1) (lexical o o1))))))
-;; o1 matters, so they have to be the same
+;; NOTE: But Lua is imperitive language, so I'm afraid the binding (with let)
+;;       is useless for it. Since imperitive languages uses assignment instead.
+(define (->body body name-list rename-list)
+  ;; TODO: find out all the lexical bindings to be replaced with lexical syntax of tree-il.
+  ;;       This may need recursive and calling `comp' function.
+  #t)
+
+;; <let>
+;; GRAMMAR:
+;; (let (name-list) (rename-list) (values-to-bind) body-in-tree-il)
+;; e.g:
+;; (let (x y) (x321 y123) ((const 1) (const 2)) (call (toplevel +) (lexical x x321) (lexical y y123))) ==> 3
+;; NOTE: only x321 and y123, say, rename-list matters, so keep them identical in the body,
+;;       name-list seems useless here, dunno...
+(define (->let name-list val-list body env)
+  (let ((rename-list (map newsym name-list)))
+    `(let ,name-list ,rename-list ,val-list ,(->body body name-list rename-list env))))
+
+;; There's no let* in tree-il, so we have to handle it.
+(define (->let* name-list val-list body env)
+  (if (null? name-list)
+      `(let () () () ,body)
+      `(let ,(list (car name-list)) ,(map newsym name-list) ,(list (car val-list))
+            (->let* (cdr name-list) (cdr var-list) body))))
 
 (define *toplevel-ops* '())
 
@@ -138,19 +158,19 @@
 
 ;; FIXME: It's useless to check toplevel/primitives.
 ;;        First, Guile does this for you. Second, the info is nothing at the end.
-;; 1. maintain lexical envs
+;; 1. maintain lexical envs.
 ;; 2. pass it in to help to check lexical symbols.
 ;; 3. We DON'T need to check toplevel but lexical to confirm what instruction to generate.
-   
+
 (define (is-toplevel-var? v)
   ;; NOTE: If you define a var in toplevel, you can't find it in the-root-module,
   ;;       which is for primitives.
   (defined? v *default-toplevel-module*))
 
-(define (->scope op pred)
+(define (->scope id pred)
   (cond
-   ((pred op) `(toplevel ,op))
-   (else `(lexical ,op ,op))))
+   ((pred id) `(toplevel ,id))
+   (else `(lexical ,id ,(newsym id)))))
 
 (define (->op op) (->scope op is-toplevel-op?))
 (define (->var var) (->scope var is-toplevel-var?))
@@ -165,8 +185,19 @@
     (((op args ...) rest ...) `((call ,(->op op) ,@(map ->val args) ...) ,@(apply body-expander rest)))
     (else "no")))
 
-;; The usage of lambda in tree-il:
-;; (lambda-case ((req opt rest kw inits gensyms) body) [alternate])
+;; <lambda>
+;; GRAMMAR:
+;; (lambda () (lambda-case ((req opt rest kw inits gensyms) body) [alternate]))
+;; NOTE: you have to use (lambda () ...) to create a closure first, than define the lambda-case in it.
+;; e.g:
+;; (define func (lambda () (lambda-case (((o) #f #f #f () (o123)) (call (toplevel +) (const 1) (lexical o o123)))))
+;; o123 matters, so they have to be the same.
+;; (func 2) ==> 3
+;; (define func (lambda () (lambda-case (((x y) #f #f #f () (x123 y321)) (call (toplevel +) (lexical x x123) (lexical y y321))))))
+;; (func 2 3) ==> 5
+;; e.g, a thunk:
+;; (lambda () (lambda-case ((() #f #f #f () ()) (const 123))))
+;;
 ;; 1. (lambda () 1)
 ;; e.g: (lambda () (lambda-case ((() #f #f #f () ()) (const 1))))
 ;;
@@ -190,6 +221,6 @@
      `(lambda ()
         (lambda-case
          (((arg arg* ...) #f args #f () ,(map ->gensym `(arg arg* ... args))) (body-expander body ...)))))))
-    
+
 (define-syntax-rule (tree-il-define name what)
   `(define name ,what))
