@@ -17,6 +17,7 @@
   #:use-module (language lua utils)
   #:use-module (language lua base)
   #:use-module (language lua type-checking)
+  #:use-module (language lua optimize)
   #:use-module (ice-9 match)
   #:export (lua-type 
             ;; Arith operation
@@ -39,26 +40,39 @@
 (define (emit-tree-il-from-function obj)
   (match obj
     (($ <lua-function> ($ <lua-type> _ name value)  
-`(call (primitive ,op) (const ,x) (const ,y))))
+        `(call (primitive ,op) (const ,x) (const ,y))))
+    (else (error emit-tree-il-from-function "Invalid <lua-function> object!" obj))))
 
-(define-macro (make-low-level-op op)
-  (::define (%lua-num-num-arith x y)
-   ((number number) -> (number))
-   (try-partial-evaluate op x y)))
+(::define (%lua-num-num-arith op x y env)
+  ((number number) -> (number))
+  (try-to-optimize-op x y env))
 
-(define (lua-arith op x y)
+(::define (%lua-str-num-arith op x y env)
+  ((string number) -> (number))
+  (try-to-optimize-op op x y env))
+
+(::define (%lua-str-str-arith op x y env)
+  ((string string) -> (string))
+  (try-to-optimize-op op x y env))
+
+(define (lua-arith op x y env)
   (match (get-types/vals x y)
-    (`((number ,n1) (number ,n1))
-     (%lua-num-num-arith op n1 n2))
-    ((or '(string number) '(number string))
-     (
+    ('(number number)
+     (%lua-num-num-arith op x y env))
+    ('(string number)
+     (%lua-str-num-arith op x y env))
+    ('(number string)
+     (%lua-str-num-arith op y x env))
+    ('(string string)
+     (%lua-str-num-arith op x y env))
+    (else (error lua-arith "Fatal: invalid pattern!" (get-types/vals x y)))))
 
-(define (lua-add x y) (lua-arith '+ x y))
-(define (lua-minus x y) (lua-arith '- x y))
-(define (lua-multi x y) (lua-arith '* x y))
-(define (lua-div x y) (lua-arith '/ x y))
-(define (lua-mod x y) (lua-arith 'modulo x y))
-(define (lua-expt x y) (lua-arith 'expt x y))
+(define (lua-add x y) (lua-arith 'arith-add x y))
+(define (lua-minus x y) (lua-arith 'arith-minus x y))
+(define (lua-multi x y) (lua-arith 'arith-multi x y))
+(define (lua-div x y) (lua-arith 'arith-div x y))
+(define (lua-mod x y) (lua-arith 'arith-modulo x y))
+(define (lua-expt x y) (lua-arith 'arith-expt x y))
 
 ;; return value is guile-boolean 
 ;; FIXME: add type checking
