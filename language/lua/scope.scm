@@ -20,8 +20,8 @@
   #:use-module (nashkel rbtree)
   #:export (lua-env
             lua-env?
-            lua-env-higher-level-env
-            lua-env-higher-level-env-set!
+            lua-env-upper-frame
+            lua-env-upper-frame-set!
             lua-env-symbol-table
 
             current-top-level-environment
@@ -41,7 +41,7 @@
 
 (define-record-type lua-env
   (fields 
-   (mutable higher-level-env)
+   (mutable upper-frame)
    symbal-table))
 
 (define (symbol-table-pred t sym)
@@ -57,7 +57,7 @@
 (define new-symbol-table new-rb-tree)
 
 (define *top-level-environment*
-  (make-lua-env #f ; top-level has no higher level
+  (make-lua-env #f ; top-level has no upper frame
                 (new-symbol-table)))
 
 ;; FIXME: do we really need this??
@@ -71,7 +71,7 @@
   (symbol-table-ref (lua-env-symbol-table e) sym))
 
 (define (is-top-level? e)
-  (not (lua-env-higher-level-env e)))
+  (not (lua-env-upper-frame e)))
 
 (define (lua-static-scope-set! e sym val)
   (lua-local-set! e sym val))
@@ -79,7 +79,7 @@
 (define (lua-static-scope-ref e sym)
   (or (lua-local-ref e sym)
       (and (not (is-top-level? e))
-           (lua-static-scope-ref (lua-env-higher-level-env e) sym))))
+           (lua-static-scope-ref (lua-env-upper-frame e) sym))))
 
 (define (lua-global-set! sym val)
   (symbol-table-set! *top-level-environment* sym val))
