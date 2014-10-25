@@ -24,6 +24,7 @@
   #:use-module (language lua optimize)
   #:use-module (language lua types)
   #:use-module (language lua scope)
+  #:use-module (nashkel rbtree)
   #:use-module (ice-9 match)
   #:export (::define
             type-inference))
@@ -37,11 +38,20 @@
    ((lua-boolean? obj) `(boolean ,obj))
    ((lua-nil? obj) '(marker nil)) 
    ;;((lua-table? obj) `(table ,obj))
-   (else `(unknown ,obj))))
+   (else '(unknown #f))))
 
-(define *function-type-table* (make-hash-table))
-(define (ftt-add! f t) (hash-set! *function-type-table* f t))
-(define (ftt-ref f) (hash-ref *function-type-table* f))
+(define (ftt-pred t ann)
+  (rbt-make-PRED t = > < (symbol-hash ann)))
+
+(define *function-type-table* (new-rb-tree))
+(define (ftt-add! f t) (rb-tree-add! *function-type-table* f t #:PRED ftt-pred))
+(define (ftt-ref f) (rb-tree-search *function-type-table* f #:PRED ftt-pred))
+
+(define (ftt-guess-type f)
+  (match (ftt-ref f)
+    ((targs '-> tres)
+     (list tres (gen-null)))
+    (else 'unknown)))
 
 (define (get-types x . y)
   (apply lua-type-map lua-typeof x y))
@@ -62,12 +72,12 @@
          (let ((ret (match (get-types x x* ...)
                       ('(type type* ...)
                        body ...)
-                      (else (error "Error while args type checking!"
-                                   op 'type 'type* ... x x* ...)))))
+                      (else (error op "Error while args type checking!"
+                                   'type 'type* ... x x* ...)))))
            (if (eq? (lua-typeof ret) 'func-type)
                ret
-               (error "Error while ret type checking!"
-                      op 'func-type ret (lua-typeof ret)))))))))
+               (error op "Error while ret type checking!"
+                      'func-type ret (lua-typeof ret)))))))))
 
 ;; --- Runtime Type Checking ---
 ;; 1. We use DFA for the type checking.
@@ -110,65 +120,84 @@
 (define (err o)
   (error "Type-checking error: attempt to perform arithmetic on a ~a value" (lua-typeof o)))
 
-(define (lua-arith/number op x y env optimizing?)
-  `(number ,(optimize (list (symbol-append 'arith- op) x y) env optimizing?)))
+(define (lua-arith/number op x y env peval?)
+  `(number ,(optimize (list (symbol-append 'arith- op) x y) env peval?)))
 
-(define (lua-arith/string op x y env optimizing?)
+(define (lua-arith/string op x y env peval?)
   (let ((xx (string->number x))
         (yy (string->number y)))
     (and (or xx (err xx)) (or yy (err yy)))
-    (lua-arith/number op xx yy env optimizing?)))
+    (lua-arith/number op xx yy env peval?)))
 
 ;; NOTE: x is always string
-(define (lua-arith/numstr op x y env optimizing?)
+(define (lua-arith/numstr op x y env peval?)
   (let ((xx (string->number x)))
     (or xx (err xx))
-    (lua-arith/number op xx y env optimizing?)))
+    (lua-arith/number op xx y env peval?)))
 
 (define-syntax-rule (->lua-op category type)
   (primitive-eval (symbol-append 'lua- category '/ type)))
 
-(define (call-arith-op/typed tx ty op x y env optimizing?)
+(define (call-arith-op/typed tx ty op x y env peval?)
   (match (list tx ty)
     ((number number)
-     ((->lua-op 'arith 'number) op x y env optimizing?))
+     ((->lua-op 'arith 'number) op x y env peval?))
     ((string string)
-     ((->lua-op 'arith 'string) op x y env optimizing?))
+     ((->lua-op 'arith 'string) op x y env peval?))
     ((string number)
-     ((->lua-op 'arith 'numstr) op x y env optimizing?))
+     ((->lua-op 'arith 'numstr) op x y env peval?))
     ((number string)
-     ((->lua-op 'arith 'numstr) op y x env optimizing?))
+     ((->lua-op 'arith 'numstr) op y x env peval?))
     (else
      ;; Shouldn't be here! Because all the arith-op should be registered.
-     (error "Type-checking: invalid type for arithmetic" (list tx ty) op optimizing?))))
+     (error "Type-checking: invalid type for arithmetic" (list tx ty) op peval?))))
 
-(define (check/arith-op op x y env optimizing?)
+(define (check/arith-op op x y env peval?)
   (match (ftt-ref op)
     ((tx ty '-> tf)
      (and (or (eq? tx (lua-typeof x)) (err x))
           (or (eq? ty (lua-typeof y)) (err y)))
-     (let ((xx (optimize x env optimizing?))
-           (yy (optimize y env optimizing?)))
+     (let ((xx (optimize x env peval?))
+           (yy (optimize y env peval?)))
        `(,tf ,(call-arith-op/typed tx ty op xx yy))))
     (else (error "Type-checking: No such arith rule was registered!" op)))) 
 
-(define (check/cond cond env optimizing?)
-  (let ((e (optimize cond env optimizing?)))
+(define (check/cond cond env peval?)
+  (let ((e (optimize cond env peval?)))
     (cond
      ((is-immediate-object? e) (type-guessing e))
      (else e))))
-
-(define (try-to-reduce-func-call fname fargs env optimizing?)
-  (let* ((func (get-proper-func fname env))
-         (node (call-lua-func func fargs env)))
-    (if optimizing?
-        (optimize node env optimizing?)
-        node)))
+ 
+(define (try-to-guess-func-type fname fargs env peval?)
+  (define (guess-from-ftt args)
+    (ftt-ref
+     (map (lambda (sym)
+            (car (type-guessing (get-val-from-scope sym env))))
+          args)))
+  (define (call-lua-func func fname fargs env peval?)
+    ;; Format of arity: (args-cnt has-opt-args?)
+    ;; NOTE:
+    ;; 1. In Lua-5.0, there'll be a magic variable named `arg' to hold opt-args as a table;
+    ;; 2. But in Lua-5.1+, you have to use `...' for the same purpose, say:
+    ;;    local arg = {...}
+    ;; 3. guile-lua-rebirth is compatible with 5.2
+    (define (->arity args)
+      (match args
+        ((? list? ll) (list (length ll) #f)) 
+        ('(id "...") (list 0 #t))
+        (else (error ->arity "Ivalid args for generating arity!" args))))
+    (let* ((r (apply-the-func func fargs env peval?))
+           (ft (gen-function fname (->arity fargs) fargs (try-to-guess-type r))))
+      (if peval?
+          (lua-optimize ft env peval?)
+          ft)))
+  (or (guess-from-ftt fname fargs env peval?)
+      (call-lua-func func fname fargs env peval?))
 
 (define-syntax-rule (->lua-type? t)
   (primitive-eval (symbol-append '<lua- t '>?)))
 
-(define-syntax-rule (expect type x)
+(define-syntax-rule (type-expect type x)
   ((->lua-type? type) x))
 
 ;; NOTE: Type inference pass should never break the AST. It should keep the
@@ -176,7 +205,7 @@
 ;;       mark & infer all the types, include expr/literal/id.
 ;; TODO: now we don't use optimizing, do it when type-inference is finished. 
 ;; FIXME: if we don't enable partial evaluating, some inference may not be done.
-(define* (type-inference node env #:key (optimizing? #f))
+(define* (type-inference node env #:key (peval? #f))
   ;;(display src)(newline)
   (match node
     ;; Literals
@@ -185,21 +214,22 @@
     ('(boolean false) (gen-false))
     (`(number ,x) (gen-number x))
     (`(string ,x) (gen-string x))
-    (`(scope ,n) `(scope ,(type-inference (new-scope env) optimizing?)))
+    ('(unknown #f) (gen-unknown))
+    (`(scope ,n) `(scope ,(type-inference (new-scope env) peval?)))
 
     ;; Primitives
     (((? arith-op? op) x y)
      (let ((xx (type-inference x env))
            (yy (type-inference y env)))
-       (type-inference (check/arith-op op xx yy env) env optimizing?)))
+       (type-inference (check/arith-op op xx yy env) env peval?)))
 
     ;; conditions
     (('if _ ...)
-     (type-inference (check/cond node env optimizing?) env optimizing?))
+     (type-inference (check/cond node env peval?) env peval?))
 
     ;; functions
-    (('func-call fname fargs)
-     (type-inference (try-to-reduce-func-call fname fargs env optimizing?) env optimizing?))
+    (('func-call fname fargs)          
+     (type-inference (try-to-guess-func-type fname fargs env peval?) env peval?))
 
     (else (error type-inference "Invalid type encountered!" node))))
 
