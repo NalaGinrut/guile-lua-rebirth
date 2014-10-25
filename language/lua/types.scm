@@ -25,6 +25,24 @@
             <lua-variable>-name
             <lua-variable>-tag
 
+            make-<lua-nil>
+            make-<lua-boolean>
+            make-<lua-number>
+            make-<lua-string>
+            make-<lua-table>
+            make-<lua-function>
+            make-<lua-variable>
+            make-<lua-unknown>
+
+            <lua-nil>?
+            <lua-boolean>?
+            <lua-number>?
+            <lua-string>?
+            <lua-table>?
+            <lua-function>?
+            <lua-variable>?
+            <lua-unknown>?
+
             ;; gen types
             gen-nil
             gen-true
@@ -33,7 +51,7 @@
             gen-string
             gen-table
             gen-function
-            gen-null
+            gen-unknown
 
             lua-typeof
             lua-type-map
@@ -76,15 +94,16 @@
 (define-record-type <lua-table> (parent <lua-type>)
   (fields size))
 (define-record-type <lua-function> (parent <lua-type>)
-  (fields arity args return-type))
+  (fields fname arity args return-type))
 
-;; NULL is a special type to indicate `Nothing' or `unspecified'
+;; NULL is a special type to indicate `Nothing' or `unspecified'.
+;; NOTE: Unknown is not a standard Lua type, it's just used internally by this compiler.
 ;; NOTE: Don't be confused with Nil.
-(define-record-type <lua-null> (parent <lua-type>))
+(define-record-type <lua-unknown> (parent <lua-type>))
 
 ;; Lua variable
 (define-record-type <lua-variable>
-  (fields name tag))
+  (fields vname tag))
 
 (define (is-immediate-object? obj)
   (and (<lua-type>? obj)
@@ -95,11 +114,13 @@
      (apply #,(symbol-append 'make-<lua- type '>) (quote #,type) args)))
 
 ;; NOTE: Nil and Booleans should be unique in the whole environment.
-(define gen-nil (make-parameter ((new-type nil))))
-(define gen-true (make-parameter ((new-type boolean) 'true)))
-(define gen-false (make-parameter ((new-type boolean) 'false)))
-;; and Null
-(define gen-null (make-parameter ((new-type null))))
+;; NOTE: `const' will generate a const directly, rather than eval it each time.
+;;       So it's different from thunk, which will become call-by-name.
+(define gen-nil (const ((new-type nil))))
+(define gen-true (const ((new-type boolean) 'true)))
+(define gen-false (const ((new-type boolean) 'false)))
+;; and Unknown
+(define gen-unknown (const ((new-type unknown))))
 
 (define gen-number (new-type number))
 (define gen-string (new-type string))
@@ -128,7 +149,6 @@
 (define (lua-string? obj)
   (string? obj))
 (define (lua-boolean? obj)
-  
-  
+
 ;;(define (get-types/vals x . y)
 ;;  (apply lua-type-map lua-type/value x y))
