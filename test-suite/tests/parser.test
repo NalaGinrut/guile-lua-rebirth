@@ -26,7 +26,7 @@
   (export-all-from-module! '(language lua parser)))
 
 (define-syntax-rule (pick-out a b)
-  (for-each 
+  (for-each
    (lambda (x y)
      (format #t "~a~t===~t~a~t -> ~a~%" x y (equal? x y)))
    a b))
@@ -211,9 +211,8 @@
     ("function a(x) return 1+x end"
      . (func-def 
         (id "a")
-        (scope 
-         (params (id "x"))
-         (scope (return (add (number 1) (id "x")))))))
+        (params (id "x"))
+        (scope (return (add (number 1) (id "x"))))))
     ("function t.a.b.c:f (x)
         print(self)
         return x
@@ -227,12 +226,11 @@
            (id "b"))
           (id "c"))
          (colon-ref (id "f")))
+        (params (id "x"))
         (scope
-         (params (id "x"))
-         (scope
-          (begin 
-            (func-call (id "print") (args (id "self")))
-            (return (id "x")))))))
+         (begin 
+           (func-call (id "print") (args (id "self")))
+           (return (id "x"))))))
     ("t.a.b.c.f = function (self, x)
        print(self)
        return x
@@ -248,12 +246,11 @@
         (id "c"))
        (id "f"))
       (anon-func-def
+       (params (id "self") (id "x"))
        (scope
-        (params (id "self") (id "x"))
-        (scope
-         (begin
-           (func-call (id "print") (args (id "self")))
-           (return (id "x"))))))))
+        (begin
+          (func-call (id "print") (args (id "self")))
+          (return (id "x")))))))
     ("t.a.b.c:f(123)"
      . (func-colon-call
         (namespace

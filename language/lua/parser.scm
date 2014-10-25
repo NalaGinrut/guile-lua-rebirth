@@ -131,7 +131,7 @@
          (repeat ublock) : `(repeat ,$2)
          (if conds end) : `(if ,@$2)
          ;; named function
-         (function func-name func-body) : `(func-def ,$2 ,$3)
+         (function func-name func-body) : `(func-def ,$2 ,@$3)
          (var-list assign exp-list) : `(assign ,$1 ,$3)
          ;; anonymouse function
          (func-call) : $1)
@@ -203,7 +203,7 @@
 
    (bindings (name-list) : `(local ,$1)
              (name-list assign exp-list) : `(assign (local ,$1) ,$3)
-             (function name func-body) : `(local (func-def ,$2 ,$3)))
+             (function name func-body) : `(local (func-def ,$2 ,@$3)))
 
    (func-name (dotted-name) : $1
               ;; TODO: colon-ref will treat the outter-most namespace as
@@ -267,10 +267,10 @@
          (string) : $1)
 
    ;; anonymous function
-   (anonymous-func (function func-body) : `(anon-func-def ,$2))
+   (anonymous-func (function func-body) : `(anon-func-def ,@$2))
 
    ;; need new scope to hold the params bindings
-   (func-body (params block end) : `(scope ,$1 ,$2))
+   (func-body (params block end) : `(,$1 ,$2))
 
    (params (lparen par-list rparen) : `(params ,@$2))
 
