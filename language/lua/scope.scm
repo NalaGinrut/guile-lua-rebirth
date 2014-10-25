@@ -60,7 +60,7 @@
   (make-lua-env #f ; top-level has no upper frame
                 (new-symbol-table)))
 
-;; FIXME: do we really need this??
+;; NOTE: fetch top-level directly
 (define current-top-level-environment
   (make-parameter *top-level-environment*))
 
