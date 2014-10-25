@@ -61,7 +61,8 @@
             @impv
 
             ->list
-            newsym))
+            newsym
+            compile-string))
 
 (define (location x)
   (and (pair? x)
@@ -201,3 +202,6 @@
 ;; so this helper function could be useful.
 (define (newsym sym)
   (gensym (symbol->string sym)))
+
+(define (compile-string str . opts)
+  (apply read-and-compile (open-input-string str) opts))
