@@ -116,6 +116,13 @@
      ;; FIXME: Should detect if it's lib function
      ;;(display func)(newline)
      (@impl (->lua func) (comp args e)))
+    (('func-def `(id ,func) ('params p ...) body)
+     ;; TODO:
+     ;; 1. define func
+     ;; 2. set arity and params with p
+     ;; 3. save the body code for later reduction
+     #t)
+
     ;; TODO: finish the rest
     (else (error comp "invalid src" src))))
 
@@ -210,14 +217,20 @@
 ;; 4. (lambda (x y . z) 3)
 ;; e.g: (lambda () (lambda-case (((x y) #f z #f () ((const x1) (const y1) (const z2))) (const 3))))
 ;;
-;; *Maybe* we don't need to support kargs (in Lua), hmm...dunno
+;; NOTE: *Maybe* we don't need to support kargs (in Lua), hmm...dunno
+;; NOTE: There's no actual lambda-case syntax in Lua, so `alternate' is useless.
+;; TODO: use procedual Tree-IL to keep source information.
 (define-syntax ->lambda
   (syntax-rules ()
-    ((_ (arg arg* ...) body ...)
+    ((_ () body ...) ; thunk
+     `(lambda ()
+        (lambda-case
+         ((() #f #f #f () ()) (body-expander body ...)))))
+    ((_ (arg arg* ...) body ...) ; common lambda
      `(lambda ()
         (lambda-case
          (((arg arg* ...) #f #f #f () ,(map ->gensym `(arg arg* ...))) (body-expander body ...)))))
-    ((_ (arg arg* ... . args) body ...)
+    ((_ (arg arg* ... . args) body ...) ; optional-args lambda
      `(lambda ()
         (lambda-case
          (((arg arg* ...) #f args #f () ,(map ->gensym `(arg arg* ... args))) (body-expander body ...)))))))
