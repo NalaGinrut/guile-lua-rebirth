@@ -19,6 +19,17 @@
 ;;       several obvious purposes for that, e.g, Lua supports arithmatic
 ;;       operation between Number and String, we have to check and cast
 ;;       before generating primitives for the operation. 
+
+;; ------------------------------------------------------------------------
+;; NOTE: The type-inference here means deducing & notating types of subtrees
+;;       of AST. For lightenning the notation, we have these rules:
+;; 1. Only anotate binders with types.
+;; 2. Deduce the annotations on all other subterms and on the whole term.
+;; 3. Declare it well-typed if we succeed in determining the type of the term.
+;; The methodolgy of this type-inference is so-called `teval' consisted of
+;; type-deducing and partial-evaluation, which is introduced in this paper:
+;; <<Interpreting types as abstract values>> - Oleg Kiselyov, Chung-chieh Shan.
+
 (define-module (language lua type-inference)
   #:use-module (language lua utils)
   #:use-module (language lua optimize)
