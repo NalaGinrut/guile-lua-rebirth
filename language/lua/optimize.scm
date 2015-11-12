@@ -14,6 +14,7 @@
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 (define-module (language lua optimize)
+  #:use-module (language lua types)
   #:use-module (language lua peval)
   #:export (lua-optimize
             try-to-optimize-op))
@@ -26,5 +27,6 @@
 (define* (lua-optimize x env #:key (peval? #t))
   (and peval? (peval x env)))
 
-(define-syntax-rule (try-to-optimize-op op x y env)
-  (lua-optimize (list op x y) env))
+(define-syntax-rule (try-to-reduce-func-call op x y env)
+  (let ((func (gen-function (->arity
+  (lua-optimize func env))
