@@ -146,8 +146,9 @@
     ;;    includes variables for the dynamic positions.
     ;; 5. The specialized function is ultimately applied to the dynamic arguments. The expression for that
     ;;    application serves as the result of partial evaluation.
-    ((func x y)
-     ;; TODO
+    (((? <lua-function>? func) x y)
+     ;; TODO: Should apply this func as possible.
+     (let ((func (get-proper-func
      pattern)
 
     ;; TODO
