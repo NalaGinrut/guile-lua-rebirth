@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014
+;;  Copyright (C) 2014,2015
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -38,6 +38,11 @@
             new-scope
 
             get-proper-func))
+
+;; NOTE: Since Lua is not FP, we're not going to implement it as the functional
+;;       static scope which means the upper level scope will be immutable. That
+;;       would be little complicated to be implemented efficient.
+;;       Now it'll be an imperitive static scope implementation. That's easier.
 
 (define-record-type lua-env
   (fields 
