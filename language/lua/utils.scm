@@ -71,6 +71,7 @@
             is-newline?
             is-op-sign0?
             is-op-sign1?
+            is-whitespace?
             check-delimiter
             
             *delimiters*
