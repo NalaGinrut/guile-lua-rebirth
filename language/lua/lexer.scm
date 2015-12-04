@@ -253,7 +253,6 @@
            (cond
             ;; save function name for type annotation
             ((string=? id "function")
-             (set! just-defined-function? #t)
              (push-function-name port))
             ;; pop out the current function name
             ((and (string=? id "end")
