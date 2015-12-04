@@ -19,7 +19,8 @@
   #:use-module (system base lalr)
   #:use-module (language lua utils)
   #:export (make-lua-tokenizer
-            debug-lua-tokenizer))
+            debug-lua-tokenizer
+            debug-lua-type-annos))
 
 (define-syntax-rule (maybe-op-sign? c)
   (or (is-op-sign1? c) (is-op-sign0? c)))
@@ -392,6 +393,6 @@
   ((make-token-checker test-lua-tokenizer) src))
 
 (define (debug-lua-type-annos file)
-  (let ((src (call-with-input-file file get-string-all)))
+  (let ((src (call-with-input-file file (@ (rnrs) get-string-all))))
     (debug-lua-tokenizer src)
     (print-all-type-annos)))
