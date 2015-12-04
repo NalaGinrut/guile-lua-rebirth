@@ -193,8 +193,8 @@
       (read-line port) ; skip the first line
       (set! already-in-the-comment #t))
      ((and already-in-the-comment (char=? c #\@))
-      (try-to-detect-type-annotation (read-line port))) ; comment in comment
-     (else (read-line port))))) ; skip line comment
+      (read-line port)) ; comment in comment
+     (else (try-to-detect-type-annotation (read-line port)))))) ; skip line comment
 
 ;; As Lua specification, underscore follows one or more UPPERCASE is a special-id
 ;; Specifically, single underscore "_" is reserved as dummy variable
