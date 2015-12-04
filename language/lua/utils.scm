@@ -62,7 +62,22 @@
 
             ->list
             newsym
-            compile-string))
+            compile-string
+
+            char-predicate
+            is-digit?
+            is-id-head?
+            valid-id?
+            is-newline?
+            is-op-sign0?
+            is-op-sign1?
+            check-delimiter
+            
+            *arith-op*
+            *relational-op*
+            *logical-op*
+            *misc-op*
+            *punctuations*))
 
 (define (location x)
   (and (pair? x)
@@ -205,3 +220,62 @@
 
 (define (compile-string str . opts)
   (apply read-and-compile (open-input-string str) opts))
+
+
+;; Character predicates
+
+;; Lua only accepts ASCII characters in 5.2
+;; Define charsets for faster searching
+(define (char-predicate string)
+  (let ((cs (string->char-set string)))
+    (lambda (c)
+      (and (not (eof-object? c)) (char-set-contains? cs c)))))
+
+(define is-digit? (char-predicate "0123456789"))
+(define is-id-head? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
+(define (valid-id? c) (or (is-id-head? c) (is-digit? c)))
+(define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
+(define *delimiters* " \t\n()[]{};+-/*%^~=<>\".,:")
+(define is-op-sign0? (char-predicate "+-*/%^=~<>#"))
+(define is-op-sign1? (char-predicate "randot"))
+(define check-delimiter (char-predicate *delimiters*))
+
+(define *arith-op*
+  '(("+" . add)
+    ("-" . minus)
+    ("*" . multi)
+    ("/" . div)
+    ("%" . mod)
+    ("^" . expt)))
+
+(define *relational-op*
+  '(("==" . eq)
+    ("~=" . neq)
+    ("<"  . lt)
+    (">"  . gt)
+    ("<=" . leq)
+    (">=" . geq)))
+
+(define *logical-op*
+  '(("or"  . or)
+    ("and" . and)
+    ("not" . not)))
+
+(define *misc-op*
+  '(#;(".." . concat) ; don't need it here
+    ("#" . hash)
+    ("=" . assign)))
+
+;; NOTE: dots will have speical process
+;;       so it doesn't appear in both punctuations and operations
+(define *punctuations*
+  '((";" . semi-colon)
+    ("," . comma)
+    (":" . colon)
+    ;;("." . dot) ; don't need it here
+    ("{" . lbrace)
+    ("}" . rbrace)
+    ("(" . lparen)
+    (")" . rparen)
+    ("[" . lbracket)
+    ("]" . rbracket)))
