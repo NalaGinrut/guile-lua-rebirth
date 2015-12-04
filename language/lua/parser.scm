@@ -16,6 +16,7 @@
 (define-module (language lua parser)
   #:use-module (language lua utils)
   #:use-module (language lua lexer)
+  #:use-module (language lua type-annotation)
   #:use-module (system base lalr)
   #:use-module (ice-9 match)
   #:export (make-parser
