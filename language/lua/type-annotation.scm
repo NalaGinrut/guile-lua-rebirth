@@ -33,7 +33,7 @@
   (when (is-whitespace? (peek-char port))
         (read-char port)
         (peek-funcname port))
-  (let ((fname (read-delimited port *delimiters*)))
+  (let ((fname (read-delimited *delimiters* port)))
     (unread-string fname port)
     fname))
 
