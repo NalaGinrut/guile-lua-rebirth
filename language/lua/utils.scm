@@ -73,6 +73,7 @@
             is-op-sign1?
             check-delimiter
             
+            *delimiters*
             *arith-op*
             *relational-op*
             *logical-op*
