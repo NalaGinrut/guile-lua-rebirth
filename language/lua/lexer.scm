@@ -18,6 +18,7 @@
   #:use-module (ice-9 receive)
   #:use-module (system base lalr)
   #:use-module (language lua utils)
+  #:use-module (language lua type-annotation)
   #:export (make-lua-tokenizer
             debug-lua-tokenizer
             debug-lua-type-annos))
