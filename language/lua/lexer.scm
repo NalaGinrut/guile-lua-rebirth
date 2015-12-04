@@ -20,8 +20,7 @@
   #:use-module (language lua utils)
   #:use-module (language lua type-annotation)
   #:export (make-lua-tokenizer
-            debug-lua-tokenizer
-            debug-lua-type-annos))
+            debug-lua-tokenizer))
 
 (define (get-op-token lst)
   (and (not (null? lst))  
@@ -352,9 +351,3 @@
 
 (define (debug-lua-tokenizer src)
   ((make-token-checker test-lua-tokenizer) src))
-
-(define (debug-lua-type-annos file)
-  (let* ((fp (open-file file "r+"))
-         (src ((@ (rnrs) get-string-all) fp)))
-    (debug-lua-tokenizer src)
-    (print-all-type-annos)))

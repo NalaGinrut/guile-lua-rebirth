@@ -18,10 +18,17 @@
   #:use-module (language lua lexer)
   #:use-module (system base lalr)
   #:use-module (ice-9 match)
-  #:export (make-parser read-lua))
+  #:export (make-parser
+            read-lua
+            debug-lua-type-annos))
 
 (define (read-lua port)
   (make-reader make-parser make-lua-tokenizer port))
+
+(define (debug-lua-type-annos file)
+  (let ((fp (open-file file "r+")))
+    (read-lua fp)
+    (print-all-type-annos)))
 
 ;; NOTE:
 ;; Acoording to conventions of scm-lalr:
