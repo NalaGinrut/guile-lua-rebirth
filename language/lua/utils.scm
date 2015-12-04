@@ -71,7 +71,6 @@
             is-newline?
             is-op-sign0?
             is-op-sign1?
-            is-whitespace?
             check-delimiter
             
             *delimiters*
@@ -79,7 +78,18 @@
             *relational-op*
             *logical-op*
             *misc-op*
-            *punctuations*))
+            *punctuations*
+            
+            maybe-op-sign?
+            maybe-op-stop?
+            punc->symbol
+            is-puctuation?
+            is-delimiter?
+            is-whitespace?
+            read-word
+            *reserved-words*
+            is-reserved-word?
+            *all-op*))
 
 (define (location x)
   (and (pair? x)
@@ -281,3 +291,42 @@
     (")" . rparen)
     ("[" . lbracket)
     ("]" . rbracket)))
+
+(define-syntax-rule (maybe-op-sign? c)
+  (or (is-op-sign1? c) (is-op-sign0? c)))
+
+;; BUG
+;; FIXME: Should pass "1+ -1" and "1+-1"
+(define-syntax-rule (maybe-op-stop? c last)
+  (cond
+   ;;((is-delimiter? c) #t)
+   ((is-op-sign0? last)
+    (not (is-op-sign0? c)))
+   ((is-op-sign1? last)
+    (not (is-op-sign1? c)))
+   (else #t)))
+
+(define-syntax-rule (punc->symbol c)
+  (assoc-ref *punctuations* (string c)))
+
+(define-syntax-rule (is-puctuation? c)
+  (punc->symbol c))
+
+(define (is-delimiter? c)
+  (or (eof-object? c)
+      (check-delimiter c)))
+
+(define (is-whitespace? c)
+  (and (char? c) (char-set-contains? char-set:whitespace c)))
+
+(define (read-word port)
+  (read-delimited *delimiters* port 'peek))
+
+(define *reserved-words*
+  '(return function end if then elseif else true false nil or and
+           do while repeat until local for break in not))
+
+(define (is-reserved-word? str)
+  (and=> (memq (string->symbol str) *reserved-words*) car))
+
+(define *all-op* (append *arith-op* *relational-op* *logical-op* *misc-op*))
