@@ -20,7 +20,8 @@
   #:use-module (language lua utils)
   #:use-module (language lua type-annotation)
   #:export (make-lua-tokenizer
-            debug-lua-tokenizer))
+            debug-lua-tokenizer
+            debug-lua-type-annos))
 
 (define (get-op-token lst)
   (and (not (null? lst))  
@@ -330,8 +331,7 @@
                         (check (stack-top stack) tok))
                    (stack-pop! stack)
                    (lex-error "unexpected close"
-                              (cons (lexical-token-source tok)
-                                    (lexical-token-source (stack-top stack)))
+                              (lexical-token-source tok)
                               #f)))
               ;; NOTE: this checker promised the last semi-colon before eof will 
               ;;       return '*eoi* directly, or we have to press EOF (C-d) to 
@@ -352,3 +352,8 @@
 
 (define (debug-lua-tokenizer src)
   ((make-token-checker test-lua-tokenizer) src))
+
+(define (debug-lua-type-annos file)
+  (let ((fp (open-file file "r+")))
+    (debug-lua-tokenizer ((@ (rnrs) get-string-all) fp))
+    (print-all-type-annos)))

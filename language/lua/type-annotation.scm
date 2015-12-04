@@ -30,12 +30,15 @@
             print-all-type-annos))
 
 (define (peek-funcname port)
-  (when (is-whitespace? (peek-char port))
-        (read-char port)
-        (peek-funcname port))
-  (let ((fname (read-delimited *delimiters* port)))
-    (unread-string fname port)
-    fname))
+  (cond
+   ((eof-object? (peek-char port)) #f)
+   ((is-whitespace? (peek-char port))
+    (read-char port)
+    (peek-funcname port))
+   (else
+    (let ((fname (read-delimited "(" port 'peek)))
+      (unread-string fname port)
+      fname))))
 
 (define *function-anno-stack* (new-stack))
 
@@ -70,9 +73,9 @@
   (define (parse anno)
     (map (lambda (s)
            (string->symbol (string-trim-both s)))
-         (string-split anno #\sp)))
+         (string-split (string-trim-both anno) #\sp)))
   (cond
-   ((irregex-match *fun-ta-re* line)
+   ((irregex-match *fun-ta-re* (string-trim-both line))
     => (lambda (m)
          (let ((anno (irregex-match-substring m 1)))
            (store-type-anno (parse anno)))))
@@ -81,5 +84,5 @@
 (define (print-all-type-annos)
   (hash-for-each
    (lambda (k v)
-     (format #t "~2t~a: ~a~%" k v))
+     (format #t "~2t~a: ~2t~a~%" k v))
    *func-anno-db*))
