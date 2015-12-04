@@ -14,7 +14,7 @@
 ;; "No, it's not quite so bad as that.  It is the unofficial
 ;; force, -- the Baker Street irregulars."
 
-(define-module (lua language irregex)
+(define-module (language lua irregex)
   #:export (irregex string->irregex sre->irregex string->sre
             maybe-string->sre irregex?  irregex-match-data?
 	    irregex-new-matches irregex-reset-matches!  irregex-search
