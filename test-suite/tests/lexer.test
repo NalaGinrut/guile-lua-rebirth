@@ -23,6 +23,7 @@
 
 ;; export all things
 (eval-when (eval load compile)
+  (export-all-from-module! '(language lua utils))
   (export-all-from-module! '(language lua lexer)))
 
 (define-syntax-rule (pick-out a b)
