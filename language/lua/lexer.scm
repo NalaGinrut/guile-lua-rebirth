@@ -330,7 +330,8 @@
                         (check (stack-top stack) tok))
                    (stack-pop! stack)
                    (lex-error "unexpected close"
-                              (lexical-token-source tok)
+                              (cons (lexical-token-source tok)
+                                    (lexical-token-source (stack-top stack)))
                               #f)))
               ;; NOTE: this checker promised the last semi-colon before eof will 
               ;;       return '*eoi* directly, or we have to press EOF (C-d) to 
