@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014
+;;  Copyright (C) 2013,2014,2015
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -20,64 +20,6 @@
   #:use-module (language lua utils)
   #:export (make-lua-tokenizer
             debug-lua-tokenizer))
-
-;; Character predicates
-
-;; Lua only accepts ASCII characters in 5.2
-;; Define charsets for faster searching
-(define (char-predicate string)
-  (let ((cs (string->char-set string)))
-    (lambda (c)
-      (and (not (eof-object? c)) (char-set-contains? cs c)))))
-
-(define is-digit? (char-predicate "0123456789"))
-(define is-id-head? (char-predicate "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"))
-(define (valid-id? c) (or (is-id-head? c) (is-digit? c)))
-(define (is-newline? c) (and (char? c) (or (char=? c #\newline) (char=? c #\cr))))
-(define *delimiters* " \t\n()[]{};+-/*%^~=<>\".,:")
-(define is-op-sign0? (char-predicate "+-*/%^=~<>#"))
-(define is-op-sign1? (char-predicate "randot"))
-(define check-delimiter (char-predicate *delimiters*))
-
-(define *arith-op*
-  '(("+" . add)
-    ("-" . minus)
-    ("*" . multi)
-    ("/" . div)
-    ("%" . mod)
-    ("^" . expt)))
-
-(define *relational-op*
-  '(("==" . eq)
-    ("~=" . neq)
-    ("<"  . lt)
-    (">"  . gt)
-    ("<=" . leq)
-    (">=" . geq)))
-
-(define *logical-op*
-  '(("or"  . or)
-    ("and" . and)
-    ("not" . not)))
-
-(define *misc-op*
-  '(#;(".." . concat) ; don't need it here
-    ("#" . hash)
-    ("=" . assign)))
-
-;; NOTE: dots will have speical process
-;;       so it doesn't appear in both punctuations and operations
-(define *punctuations*
-  '((";" . semi-colon)
-    ("," . comma)
-    (":" . colon)
-    ;;("." . dot) ; don't need it here
-    ("{" . lbrace)
-    ("}" . rbrace)
-    ("(" . lparen)
-    (")" . rparen)
-    ("[" . lbracket)
-    ("]" . rbracket)))
 
 (define-syntax-rule (maybe-op-sign? c)
   (or (is-op-sign1? c) (is-op-sign0? c)))
@@ -288,7 +230,7 @@
       (read-line port) ; skip the first line
       (set! already-in-the-comment #t))
      ((and already-in-the-comment (char=? c #\@))
-      (read-line port)) ; comment in comment
+      (try-to-detect-type-annotation (read-line port))) ; comment in comment
      (else (read-line port))))) ; skip line comment
 
 ;; As Lua specification, underscore follows one or more UPPERCASE is a special-id
@@ -307,6 +249,16 @@
     (cond
      ((is-reserved-word? id)
       => (lambda (res)
+           (cond
+            ;; save function name for type annotation
+            ((string=? id "function")
+             (set! just-defined-function? #t)
+             (push-function-name port))
+            ;; pop out the current function name
+            ((and (string=? id "end")
+                  (string=? "function" (pop-nearest-block-header)))
+             (pop-function-name port))
+            (else #f)) ; Not a statement ended by `end'
            (values res #f)))
      ((is-special-id? id) ; special id
       (if (is-valid-id? id)
@@ -438,3 +390,8 @@
 
 (define (debug-lua-tokenizer src)
   ((make-token-checker test-lua-tokenizer) src))
+
+(define (debug-lua-type-annos file)
+  (let ((src (call-with-input-file file get-string-all)))
+    (debug-lua-tokenizer src)
+    (print-all-type-annos)))
