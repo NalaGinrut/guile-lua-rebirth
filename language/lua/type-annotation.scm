@@ -25,6 +25,7 @@
             pop-nearest-block-header
             top-nearest-block-header
 
+            try-to-detect-type-annotation
             get-func-anno
             print-all-type-annos))
 
@@ -52,7 +53,7 @@
 (define (push-nearest-block-header token)
   (stack-push! *nearest-block-header* token))
 
-(define (pop-nearest-block-header token)
+(define (pop-nearest-block-header)
   (stack-pop! *nearest-block-header*))
 
 (define (top-nearest-block-header)
@@ -60,7 +61,7 @@
 
 (define *func-anno-db* (make-hash-table))
 
-(define (get-func-anno func) (hash-ref *func-anno-db*))
+(define (get-func-anno func) (hash-ref *func-anno-db* func))
 
 (define *fun-ta-re* (string->sre "@anno:(.*)"))
 (define (try-to-detect-type-annotation line)
