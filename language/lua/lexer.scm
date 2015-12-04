@@ -354,6 +354,7 @@
   ((make-token-checker test-lua-tokenizer) src))
 
 (define (debug-lua-type-annos file)
-  (let ((src (call-with-input-file file (@ (rnrs) get-string-all))))
+  (let* ((fp (open-file file "r+"))
+         (src ((@ (rnrs) get-string-all) fp)))
     (debug-lua-tokenizer src)
     (print-all-type-annos)))
