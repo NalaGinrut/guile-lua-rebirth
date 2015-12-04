@@ -15,6 +15,7 @@
 
 (define-module (language lua utils)
   #:use-module (ice-9 q)
+  #:use-module (ice-9 rdelim)
   #:use-module (srfi srfi-1)
   #:use-module (system base language)
   #:use-module (system base compile)
