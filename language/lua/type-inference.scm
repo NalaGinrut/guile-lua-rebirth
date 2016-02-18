@@ -216,7 +216,7 @@
 ;;       mark & infer all the types, include expr/literal/id.
 ;; TODO: now we don't use optimizing, do it when type-inference is finished. 
 ;; FIXME: if we don't enable partial evaluating, some inference may not be done.
-(define* (type-inference node env #:key (peval? #f))
+(define* (type-inference node env #:key (peval? #f) (type (gen-mystery '())))
   ;;(display src)(newline)
   (match node
     ;; Literals

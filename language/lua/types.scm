@@ -86,6 +86,7 @@
 (define-record-type <lua-type>
   (fields name value))
 
+(define-record-type <lua-mystery> (parent <lua-type>))
 (define-record-type <lua-nil> (parent <lua-type>))
 (define-record-type <lua-boolean> (parent <lua-type>))
 (define-record-type <lua-number> (parent <lua-type>))
@@ -126,6 +127,8 @@
 (define gen-string (new-type string))
 (define gen-table (new-type table))
 (define gen-function (new-type function))
+
+(define gen-mystery (new-type mystery))
 
 (define (lua-typeof obj)
   (if (<lua-type>? obj)
