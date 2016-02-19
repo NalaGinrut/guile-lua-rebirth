@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014
+;;  Copyright (C) 2013,2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -158,7 +158,8 @@
    (cond-list-prefix () : '()
                      (cond-list elseif) : $1)
 
-   (cond (exp then block) : `(,$1 then ,$3))
+   (cond (exp then block) : `(,$1 then ,$3)
+         (error then))
 
    (var-list (var) : $1
              ;; Multi values binding
