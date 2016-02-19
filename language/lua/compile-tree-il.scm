@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014
+;;  Copyright (C) 2013,2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -32,7 +32,8 @@
   (values
    (parse-tree-il
     (begin (lua-init)
-           (comp exp (current-top-level-environment))))
+           (comp (lua-optimize exp env)
+                 (current-top-level-environment))))
    env
    env))
 
@@ -44,8 +45,7 @@
 
 (define (let1 what proc)
   (let ((sym (gensym))) 
-    (-> (let (list sym) (list sym) (list what)
-             (proc sym)))))
+    (-> (let (list sym) (list sym) (list what) (proc sym)))))
 
 (define (begin1 what proc)
   (let1 what (lambda (v)
@@ -71,9 +71,9 @@
 
     ;; variables
     (`(variable ,x)
-     (%> lookup x e))
+     (lua-static-scope-ref x))
     (`(store ,x ,v)
-     (%> store x (comp v e) e))
+     (lua-static-scope-set! x (comp v e) e))
 
     ;; scope and statment
     ;; FIXME: we need lexical scope
@@ -84,6 +84,26 @@
      (comp form e))
     (('begin forms ...)
      `(begin ,@(map (lambda (x) (comp x e)) forms)))
+    (('if cnd 'then b1)
+     (and (comp cnd e) (comp b1 e)))
+    (('if cnd 'then b1 else b2)
+     (if (comp cnd e)
+         (comp b1 e)
+         (comp b2 e)))
+    (('if cnd 'then b1 'elseif c2 'then b2 . rest)
+     (define (->if-rest x)
+       (match x
+         (() #t)
+         (('elseif c 'then b . r)
+          (if (comp c e)
+              (comp b e)
+              (->if-rest r)))
+         (else error ->if-rest "BUG: Shouldn't be here!" x)))
+     (if (comp cnd e)
+         (comp b1 e)
+         (if (comp c2 e)
+             (comp b2 e)
+             (->if-rest rest))))                    
 
     ;; arithmatic op
     (`(add ,x ,y)
@@ -97,7 +117,7 @@
     (`(mod ,x ,y)
      (lua-mod (comp x e) (comp y e)))
     (`(expt ,x ,y)
-     (@impl 'lua-expt (comp x e) (comp y e)))
+     (lua-expt (comp x e) (comp y e)))
 
     ;; logical op
     (`(lt ,x ,y)
@@ -113,15 +133,12 @@
 
     ;; functions
     (`(func-call (id ,func) (args ,args))
-     ;; FIXME: Should detect if it's lib function
      ;;(display func)(newline)
-     (@impl (->lua func) (comp args e)))
+     (->call (string->symbol func) (comp args e)))
     (('func-def `(id ,func) ('params p ...) body)
-     ;; TODO:
-     ;; 1. define func
-     ;; 2. set arity and params with p
-     ;; 3. save the body code for later reduction
-     #t)
+     (tree-il-define
+      (string->symbol func)
+      (->lambda (p ...) (comp body e))))
 
     ;; TODO: finish the rest
     (else (error comp "invalid src" src))))
@@ -186,6 +203,9 @@
     ((? self-evaluating? val) `(const ,val))
     (else (->var v))))
 
+(define (->call f args)
+  `(call ,(->op op) ,@(map ->val args)))
+
 (define (body-expander . body)
   (match body
     (() '())
@@ -225,15 +245,15 @@
     ((_ () body ...) ; thunk
      `(lambda ()
         (lambda-case
-         ((() #f #f #f () ()) (body-expander body ...)))))
+         ((() #f #f #f () ()) ,(body-expander body ...)))))
     ((_ (arg arg* ...) body ...) ; common lambda
      `(lambda ()
         (lambda-case
-         (((arg arg* ...) #f #f #f () ,(map ->gensym `(arg arg* ...))) (body-expander body ...)))))
+         (((arg arg* ...) #f #f #f () ,(map ->gensym '(arg arg* ...))) ,(body-expander body ...)))))
     ((_ (arg arg* ... . args) body ...) ; optional-args lambda
      `(lambda ()
         (lambda-case
-         (((arg arg* ...) #f args #f () ,(map ->gensym `(arg arg* ... args))) (body-expander body ...)))))))
+         (((arg arg* ...) #f args #f () ,(map ->gensym '(arg arg* ... args))) ,(body-expander body ...)))))))
 
-(define-syntax-rule (tree-il-define name what)
-  `(define name ,what))
+(define (tree-il-define name what)
+  `(define ,name ,what))
