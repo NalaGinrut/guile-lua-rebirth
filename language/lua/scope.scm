@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014,2015
+;;  Copyright (C) 2014,2015,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -16,7 +16,6 @@
 (define-module (language lua scope)
   #:use-module (language lua utils)
   #:use-module ((rnrs) #:select (define-record-type))
-  #:use-module (ice-9 match)
   #:use-module (nashkel rbtree)
   #:export (lua-env
             lua-env?
@@ -98,9 +97,6 @@
 (define (get-proper-func fname env)
   (get-val-from-scope fname env))
 
-(define (get-val-from-scope idname env)
-  (match idname
-    (`(id ,name)
-     (or (lua-static-scope-ref env name)
-         (throw 'lua-error "No such identifier in the scope" name)))
-    (else (error get-val-from-scope "Invalid func name pattern!" idname))))
+(define (get-val-from-scope name env)
+  (or (lua-static-scope-ref env name)
+      (throw 'lua-error "No such identifier in the scope" name)))
