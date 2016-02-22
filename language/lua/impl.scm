@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014
+;;  Copyright (C) 2013,2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -15,8 +15,8 @@
 
 (define-module (language lua impl)
   #:use-module (language lua utils)
-  #:use-module (language lua base)
-  #:use-module (language lua type-checking)
+  ;;#:use-module (language lua base)
+  #:use-module (language lua type-inference)
   #:use-module (language lua optimize)
   #:use-module (ice-9 match)
   #:export (lua-type 
@@ -25,7 +25,9 @@
             ;; Logical operation
             lua-lt lua-eq lua-gt lua-geq lua-leq
 
-            lua-print))
+            lua-print
+            
+            is-lua-builtin-func?))
 
 ;; TODO: Although it's reasonable to implement new primitives for better type checking,
 ;;       we have no any chance to do that. Because it's necessary to modify VM to add
@@ -39,8 +41,8 @@
 
 (define (emit-tree-il-from-function obj)
   (match obj
-    (($ <lua-function> ($ <lua-type> _ name value)  
-        `(call (primitive ,op) (const ,x) (const ,y))))
+    (($ <lua-function> ($ <lua-type> _ name value))
+     `(call (primitive ,op) (const ,x) (const ,y)))
     (else (error emit-tree-il-from-function "Invalid <lua-function> object!" obj))))
 
 (::define (%lua-num-num-arith op x y env)
@@ -84,3 +86,9 @@
 (define (lua-gt x y) (lua-compare '> x y))
 (define (lua-geq x y) (lua-compare '>= x y))
 (define (lua-leq x y) (lua-compare '<= x y))
+
+(define *built-in-functions*
+  `(("print" . ,lua-print)))
+
+(define (is-lua-builtin-func? x)
+  (assoc-ref *built-in-functions* x))
