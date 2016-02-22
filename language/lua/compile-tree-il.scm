@@ -17,13 +17,11 @@
   #:use-module (language lua utils)
   #:use-module (language lua parser)
   #:use-module (language lua scope)
-  ;;#:use-module (language lua impl)
+  #:use-module (language lua impl)
+  #:use-module (language lua optimize)
   #:use-module (language tree-il)
   #:use-module (ice-9 match)
-  #:export (compile-tree-il
-            ->lambda
-            ->gensym
-            tree-il-define))
+  #:export (compile-tree-il))
 
 (define (lua-init)
   #t) ;; nothing to do yet.
@@ -51,104 +49,13 @@
   (let1 what (lambda (v)
                (-> (begin (proc v)
                           (-> (lexical v v)))))))
-;; for emacs:
-;; (put 'match 'scheme-indent-function 1)
-
-(define (comp src e)
-  ;;(display src)(newline)
-  (match src
-    ;; Literals
-    ('(marker nil)
-     '(const nil))
-    ('(boolean true)
-     '(const true))
-    ('(boolean false)
-     '(const false))
-    (`(number ,x)
-     (-> (const x)))
-    (`(string ,x)
-     (-> (const x)))
-
-    ;; variables
-    (`(variable ,x)
-     (lua-static-scope-ref x))
-    (`(store ,x ,v)
-     (lua-static-scope-set! x (comp v e) e))
-
-    ;; scope and statment
-    ;; FIXME: we need lexical scope
-    (('scope rest)
-     ;;(display rest)(newline)
-     (comp rest (new-scope e)))
-    (('begin form ...)
-     (comp form e))
-    (('begin forms ...)
-     `(begin ,@(map (lambda (x) (comp x e)) forms)))
-    (('if cnd 'then b1)
-     (and (comp cnd e) (comp b1 e)))
-    (('if cnd 'then b1 else b2)
-     (if (comp cnd e)
-         (comp b1 e)
-         (comp b2 e)))
-    (('if cnd 'then b1 'elseif c2 'then b2 . rest)
-     (define (->if-rest x)
-       (match x
-         (() #t)
-         (('elseif c 'then b . r)
-          (if (comp c e)
-              (comp b e)
-              (->if-rest r)))
-         (else error ->if-rest "BUG: Shouldn't be here!" x)))
-     (if (comp cnd e)
-         (comp b1 e)
-         (if (comp c2 e)
-             (comp b2 e)
-             (->if-rest rest))))                    
-
-    ;; arithmatic op
-    (`(add ,x ,y)
-     (lua-add (comp x e) (comp y e)))
-    (`(minus ,x ,y)
-     (lua-minus (comp x e) (comp y e)))
-    (`(multi ,x ,y)
-     (lua-multi (comp x e) (comp y e)))
-    (`(div ,x ,y)
-     (lua-div (comp x e) (comp y e)))
-    (`(mod ,x ,y)
-     (lua-mod (comp x e) (comp y e)))
-    (`(expt ,x ,y)
-     (lua-expt (comp x e) (comp y e)))
-
-    ;; logical op
-    (`(lt ,x ,y)
-     (lua-lt (comp x e) (comp y e)))
-    (`(gt ,x ,y)
-     (lua-gt (comp x e) (comp y e)))
-    (`(eq ,x ,y)
-     (lua-eq (comp x e) (comp y e)))
-    (`(geq ,x ,y)
-     (lua-geq (comp x e) (comp y e)))
-    (`(leq ,x ,y)
-     (lua-lt (comp x e) (comp y e)))
-
-    ;; functions
-    (`(func-call (id ,func) (args ,args))
-     ;;(display func)(newline)
-     (->call (string->symbol func) (comp args e)))
-    (('func-def `(id ,func) ('params p ...) body)
-     (tree-il-define
-      (string->symbol func)
-      (->lambda (p ...) (comp body e))))
-
-    ;; TODO: finish the rest
-    (else (error comp "invalid src" src))))
 
 (define (->gensym x)
   `(const ,(newsym x)))
 
 ;; NOTE: But Lua is imperitive language, so I'm afraid the binding (with let)
 ;;       is useless for it. Since imperitive languages uses assignment instead.
-(define (->body body name-list rename-list)
+(define (->body body name-list rename-list env)
   ;; TODO: find out all the lexical bindings to be replaced with lexical syntax of tree-il.
   ;;       This may need recursive and calling `comp' function.
   #t)
@@ -204,7 +111,7 @@
     (else (->var v))))
 
 (define (->call f args)
-  `(call ,(->op op) ,@(map ->val args)))
+  `(call ,(->op f) ,@(map ->val args)))
 
 (define (body-expander . body)
   (match body
@@ -257,3 +164,111 @@
 
 (define (tree-il-define name what)
   `(define ,name ,what))
+
+;; for emacs:
+;; (put 'match 'scheme-indent-function 1)
+
+(define (comp src e)
+  (display src)(newline)
+  (match src
+    ;; Literals
+    ('(marker nil)
+     '(const nil))
+    ('(boolean true)
+     '(const true))
+    ('(boolean false)
+     '(const false))
+    (`(number ,x)
+     (-> (const x)))
+    (`(string ,x)
+     (-> (const x)))
+
+    ;; ref and assignment
+    (`(variable ,x) ; global ref
+     `(toplevel ,x))
+    (`(assign ,x ,v) ; global assignment
+     `(set! (toplevel ,x) ,(comp v e)))
+    (`(local (variable ,x)) ; local ref
+     `(lexical-ref ,x ,(gensym x)))
+    (`(local (assign ,x ,v)) ; local assignment
+     `(set! (lexical ,x ,(gensym x)) ,(comp v e)))
+
+
+    ;; scope and statment
+    ;; FIXME: we need lexical scope
+    (('scope rest)
+     ;;(display rest)(newline)
+     (comp rest (new-scope e)))
+    (('begin form ...)
+     (comp form e))
+    (('begin forms ...)
+     `(begin ,@(map (lambda (x) (comp x e)) forms)))
+    (('if cnd 'then b1)
+     (and (comp cnd e) (comp b1 e)))
+    (('if cnd 'then b1 else b2)
+     (if (comp cnd e)
+         (comp b1 e)
+         (comp b2 e)))
+    (('if cnd 'then b1 'elseif c2 'then b2 . rest)
+     (define (->if-rest x)
+       (match x
+         (() #t)
+         (('elseif c 'then b . r)
+          (if (comp c e)
+              (comp b e)
+              (->if-rest r)))
+         (else error ->if-rest "BUG: Shouldn't be here!" x)))
+     (if (comp cnd e)
+         (comp b1 e)
+         (if (comp c2 e)
+             (comp b2 e)
+             (->if-rest rest))))
+
+    ;; arithmatic op
+    (`(add ,x ,y)
+     (lua-add (comp x e) (comp y e)))
+    (`(minus ,x ,y)
+     (lua-minus (comp x e) (comp y e)))
+    (`(multi ,x ,y)
+     (lua-multi (comp x e) (comp y e)))
+    (`(div ,x ,y)
+     (lua-div (comp x e) (comp y e)))
+    (`(mod ,x ,y)
+     (lua-mod (comp x e) (comp y e)))
+    (`(expt ,x ,y)
+     (lua-expt (comp x e) (comp y e)))
+
+    ;; logical op
+    (`(lt ,x ,y)
+     (lua-lt (comp x e) (comp y e)))
+    (`(gt ,x ,y)
+     (lua-gt (comp x e) (comp y e)))
+    (`(eq ,x ,y)
+     (lua-eq (comp x e) (comp y e)))
+    (`(geq ,x ,y)
+     (lua-geq (comp x e) (comp y e)))
+    (`(leq ,x ,y)
+     (lua-lt (comp x e) (comp y e)))
+
+    ;; functions
+    (`(func-call (id ,func) (args ,args))
+     ;;(display func)(newline)
+     (cond
+      ((is-lua-builtin-func? func)
+       => (lambda (f) (f (comp args e))))
+      ((lua-static-scope-ref func e)
+       => (lambda (f) (f (comp args e))))
+      (else
+       (->call (string->symbol func) (comp args e)))))
+    (('func-def `(id ,func) ('params p ...) body)
+     (tree-il-define
+      (string->symbol func)
+      (->lambda (p ...) (comp body e))))
+    (`(local (func-def (id ,func) (params ,p ...) ,body))
+     
+    (('anon-func-def body ...)
+     ;; TODO: implement anonymous function
+     #t)
+
+    ;; TODO: finish the rest
+    (else (error comp "invalid src" src))))
