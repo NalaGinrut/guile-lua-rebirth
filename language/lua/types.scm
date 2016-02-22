@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014
+;;  Copyright (C) 2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -54,6 +54,7 @@
             gen-unknown
 
             lua-typeof
+            lua-type=?
             lua-type-map
 
             lua-true?
@@ -96,8 +97,8 @@
 (define-record-type <lua-function> (parent <lua-type>)
   (fields fname arity args return-type))
 
-;; NULL is a special type to indicate `Nothing' or `unspecified'.
-;; NOTE: Unknown is not a standard Lua type, it's just used internally by this compiler.
+;; Unknown is a special type to indicate `Nothing' or `unspecified'.
+;; NOTE: Unknown IS NOT a standard Lua type, it's just used internally by this compiler.
 ;; NOTE: Don't be confused with Nil.
 (define-record-type <lua-unknown> (parent <lua-type>))
 
@@ -132,6 +133,9 @@
       (<lua-type>-name obj)
       (error lua-typeof "Fatal error! Blame compiler writer or modifier!" obj)))
 
+(define (lua-type=? x y)
+  (eq? (lua-typeof x) (lua-typeof y)))
+
 (define (lua-type-map proc x . y)
   (let lp((n y) (ret (list (proc x))))
     (cond
@@ -149,6 +153,7 @@
 (define (lua-string? obj)
   (string? obj))
 (define (lua-boolean? obj)
+  (boolean? obj))
 
 ;;(define (get-types/vals x . y)
 ;;  (apply lua-type-map lua-type/value x y))
