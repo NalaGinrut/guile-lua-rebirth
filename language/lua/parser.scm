@@ -102,16 +102,11 @@
                   `(scope ,$1)
                   `(scope (begin ,$1 ,$3))))
              (else `(scope (begin ,$1 ,$2 ,@$3)))))
-
-   (scope-rest () : '()
-               (last-stat terminator) : $1)
-   ;; TODO: optimize `scope', if there's no any bindings, the scope env shouldn't
-   ;;       be produced.
    
    (ublock (block until exp) : `(do ,$3 until ,$1))
 
    (scope () : '()
-          (scope stat-list binding terminator)
+          (scope stat-list binding)
           : (if (null? $1)
                 (if (null? $2)
                     $3
@@ -121,6 +116,10 @@
    (stat-list () : '()
               (stat-list stat terminator)
               : (if (null? $1) $2 `(begin ,$1 ,$2)))
+
+   (scope-rest (last-stat) : $1)
+   ;; TODO: optimize `scope', if there's no any bindings, the scope env shouldn't
+   ;;       be produced.
 
    (stat ;; A block can be explicitly delimited to produce a single statement:
          (loop-stmt do-block) 
@@ -193,18 +192,20 @@
    (range-rest () : '()
                (comma exp) : $2)
 
-   (last-stat (break) : '(break)
+   (last-stat () : '()
+              (break) : '(break)
               (return return-stat) : $2)
    
-   (return-stat () : '(return)
-                (exp-list) : `(return ,$1))
+   (return-stat (terminator) : '(return)
+                (exp-list terminator) : `(return ,$1))
 
-   (binding () : '() 
-            (local bindings) : $2)
+   (binding () : '()
+            (local bindings) : `(local ,$2)
+            (bindings) : $1)
 
-   (bindings (name-list) : `(local ,$1)
-             (name-list assign exp-list) : `(assign (local ,$1) ,$3)
-             (function name func-body) : `(local (func-def ,$2 ,@$3)))
+   (bindings (name-list) : `(variable ,$1)
+             (name-list assign exp-list) : `(assign $1 ,$3)
+             (function name func-body) : `(func-def ,$2 ,@$3))
 
    (func-name (dotted-name) : $1
               ;; TODO: colon-ref will treat the outter-most namespace as
@@ -215,7 +216,7 @@
                 (dotted-name dot name) : `(namespace ,$1 ,$3))
 
    (func-call (prefix-exp args) : `(func-call ,$1 ,$2)
-               ;; The colon syntax is used for defining methods, that is,
+              ;; The colon syntax is used for defining methods, that is,
               ;; functions that have an implicit extra parameter self. 
               ;; Thus, the statement
               ;;    function t.a.b.c:f (params)
@@ -271,7 +272,7 @@
    (anonymous-func (function func-body) : `(anon-func-def ,@$2))
 
    ;; need new scope to hold the params bindings
-   (func-body (params block end) : `(,$1 ,$2))
+   (func-body (params block end terminator) : `(,$1 ,$2))
 
    (params (lparen par-list rparen) : `(params ,@$2))
 
