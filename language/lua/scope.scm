@@ -16,7 +16,7 @@
 (define-module (language lua scope)
   #:use-module (language lua utils)
   #:use-module ((rnrs) #:select (define-record-type))
-  #:use-module (nashkel rbtree)
+  ;;#:use-module (nashkel rbtree)
   #:export (lua-env
             lua-env?
             lua-env-upper-frame
@@ -36,7 +36,8 @@
             
             new-scope
 
-            get-proper-func))
+            get-proper-func
+            get-val-from-scope))
 
 ;; NOTE: Since Lua is not FP, we're not going to implement it as the functional
 ;;       static scope which means the upper level scope will be immutable. That
@@ -52,13 +53,15 @@
   (rbt-make-PRED t = > < (string-hash-ci sym)))
 
 (define (symbol-table-set! t sym val)
-  (rb-tree-add! t sym val #:PRED symbol-table-pred))
+  ;;(rb-tree-add! t sym val #:PRED symbol-table-pred))
+  (hash-set! t sym val))
 
 (define (symbol-table-ref t sym)
-  (rb-tree-search t sym #:PRED symbol-table-pred))
+  ;;(rb-tree-search t sym #:PRED symbol-table-pred))
+  (hash-ref t sym))
 
-;; symbol table is Red Black Tree
-(define new-symbol-table new-rb-tree)
+;; TODO: symbol table should be Red Black Tree
+(define new-symbol-table make-hash-table) ;;new-rb-tree)
 
 (define *top-level-environment*
   (make-lua-env #f ; top-level has no upper frame
