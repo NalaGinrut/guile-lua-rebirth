@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014
+;;  Copyright (C) 2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@
   #:use-module (language lua optimize)
   #:use-module (language lua types)
   #:use-module (language lua scope)
-  #:use-module (nashkel rbtree)
+  ;;#:use-module (nashkel rbtree)
   #:use-module (ice-9 match)
   #:export (::define
             type-inference))
@@ -52,16 +52,23 @@
    (else '(unknown #f))))
 
 (define (ftt-pred t ann)
-  (rbt-make-PRED t = > < (symbol-hash ann)))
+  (rbt-make-PRED t = > < ann))
 
-(define *function-type-table* (new-rb-tree))
-(define (ftt-add! f t) (rb-tree-add! *function-type-table* f t #:PRED ftt-pred))
-(define (ftt-ref f) (rb-tree-search *function-type-table* f #:PRED ftt-pred))
+(define *function-type-table*
+  ;;(new-rb-tree))
+  (make-hash-table))
+
+(define (ftt-add! f t)
+  ;;(rb-tree-add! *function-type-table* (symbol-hash f) t #:PRED ftt-pred))
+  (hash-set! *function-type-table* f t))
+(define (ftt-ref f)
+  ;;(rb-tree-search *function-type-table* (symbol-hash f) #:PRED ftt-pred))
+  (hash-ref *function-type-table* f))
 
 (define (ftt-guess-type f)
   (match (ftt-ref f)
     ((targs '-> tres)
-     (list tres (gen-null)))
+     (list tres (gen-unknown)))
     (else 'unknown)))
 
 (define (get-types x . y)
@@ -173,8 +180,8 @@
        `(,tf ,(call-arith-op/typed tx ty op xx yy))))
     (else (error "Type-checking: No such arith rule was registered!" op)))) 
 
-(define (check/cond cond env peval?)
-  (let ((e (optimize cond env peval?)))
+(define (check/cond cnd env peval?)
+  (let ((e (optimize cnd env peval?)))
     (cond
      ((is-immediate-object? e) (type-guessing e))
      (else e))))
@@ -202,8 +209,8 @@
       (if peval?
           (lua-optimize ft env peval?)
           ft)))
-  (or (guess-from-ftt fname fargs env peval?)
-      (call-lua-func func fname fargs env peval?))
+  (or (guess-from-ftt args)
+      (call-lua-func func fname fargs env peval?)))
 
 (define-syntax-rule (->lua-type? t)
   (primitive-eval (symbol-append '<lua- t '>?)))
@@ -216,15 +223,16 @@
 ;;       mark & infer all the types, include expr/literal/id.
 ;; TODO: now we don't use optimizing, do it when type-inference is finished. 
 ;; FIXME: if we don't enable partial evaluating, some inference may not be done.
-(define* (type-inference node env #:key (peval? #f))
+(define* (type-inference node env #:key (peval? #f) (type #f))
   ;;(display src)(newline)
   (match node
     ;; Literals
-    ('(marker nil) (gen-nil))
-    ('(boolean true) (gen-true))
-    ('(boolean false) (gen-false))
-    (`(number ,x) (gen-number x))
-    (`(string ,x) (gen-string x))
+    ((? <lua-type>? t)
+     (cond
+      ((lua-type=? t type) type)
+      ;; TODO: how should it be if not expected type? and how about undecidable type?
+      ((<lua-unknown>? t)
+       )))
     ('(unknown #f) (gen-unknown))
     (`(scope ,n) `(scope ,(type-inference (new-scope env) peval?)))
 
