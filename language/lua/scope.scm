@@ -47,10 +47,10 @@
 (define-record-type lua-env
   (fields 
    (mutable upper-frame)
-   symbal-table))
+   symbol-table))
 
-(define (symbol-table-pred t sym)
-  (rbt-make-PRED t = > < (string-hash-ci sym)))
+;;(define (symbol-table-pred t sym)
+;;  (rbt-make-PRED t = > < (string-hash-ci sym)))
 
 (define (symbol-table-set! t sym val)
   ;;(rb-tree-add! t sym val #:PRED symbol-table-pred))
