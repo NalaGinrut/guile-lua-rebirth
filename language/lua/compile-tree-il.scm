@@ -153,23 +153,38 @@
      `(lambda ()
         (lambda-case
          ((() #f #f #f () ()) ,(body-expander body ...)))))
-    ((_ (arg arg* ...) body ...) ; common lambda
-     `(lambda ()
-        (lambda-case
-         (((arg arg* ...) #f #f #f () ,(map ->gensym '(arg arg* ...))) ,(body-expander body ...)))))
-    ((_ (arg arg* ... . args) body ...) ; optional-args lambda
-     `(lambda ()
-        (lambda-case
-         (((arg arg* ...) #f args #f () ,(map ->gensym '(arg arg* ... args))) ,(body-expander body ...)))))))
+    ((_ e (arg arg* ...) body ...) ; common lambda
+     (let ((renames (map (lambda (s)
+                           (let ((ss (->gensym s)))
+                             (lua-static-scope-set! e s ss)
+                             ss))
+                         '(arg arg* ...))))
+       `(lambda ()
+          (lambda-case
+           (((arg arg* ...) #f #f #f () ,renames) ,(body-expander body ...))))))
+    ((_ e (arg arg* ... . args) body ...) ; optional-args lambda
+     (let ((renames (map (lambda (s)
+                           (let ((ss (->gensym s)))
+                             (lua-static-scope-set! e s ss)
+                             ss))
+                         '(arg arg* ... args))))
+       `(lambda ()
+          (lambda-case
+           (((arg arg* ...) #f args #f () ,renames) ,(body-expander body ...))))))))
 
-(define (tree-il-define name what)
-  `(define ,name ,what))
+(define (->return vals)
+  (cond
+   ((null? vals) '(const nil))
+   (else `(call (primitive values) ,@vals))))
 
 ;; for emacs:
 ;; (put 'match 'scheme-indent-function 1)
 
 (define (comp src e)
+  (define (%rename x)
+    (get-val-from-scope x e))
   (display src)(newline)
+  (format #t "ENV: ~a~%" (hash-map->list cons (lua-env-symbol-table e)))
   (match src
     ;; Literals
     ('(marker nil)
@@ -189,10 +204,11 @@
     (`(assign ,x ,v) ; global assignment
      `(set! (toplevel ,x) ,(comp v e)))
     (`(local (variable ,x)) ; local ref
-     `(lexical-ref ,x ,(gensym x)))
+     `(lexical-ref ,x ,(%rename x)))
     (`(local (assign ,x ,v)) ; local assignment
-     `(set! (lexical ,x ,(gensym x)) ,(comp v e)))
-
+     `(set! (lexical ,x ,(%rename x)) ,(comp v e)))
+    (`(id ,id)
+     `(lexical-ref ,id ,(%rename id)))
 
     ;; scope and statment
     ;; FIXME: we need lexical scope
@@ -261,14 +277,19 @@
       (else
        (->call (string->symbol func) (comp args e)))))
     (('func-def `(id ,func) ('params p ...) body)
-     (tree-il-define
-      (string->symbol func)
-      (->lambda (p ...) (comp body e))))
+     `(define
+        ,(string->symbol func)
+        ,(->lambda e (p ...) (comp body e))))
     (`(local (func-def (id ,func) (params ,p ...) ,body))
-     
+     `(define
+        (lexical ,(string->symbol func))
+        ,(->lambda e (p ...) (comp body e))))
     (('anon-func-def body ...)
      ;; TODO: implement anonymous function
      #t)
+    (('return vals ...)
+     (format #t "AAA: ~a~%" (->return (map (lambda (v) (comp v e)) vals)))
+     (->return (map (lambda (v) (comp v e)) vals)))
 
     ;; TODO: finish the rest
     (else (error comp "invalid src" src))))
