@@ -18,9 +18,10 @@
   ;;#:use-module (language lua base)
   #:use-module (language lua type-inference)
   #:use-module (language lua optimize)
+  #:use-module (language lua types)
+  #:use-module (language lua irregex)
   #:use-module (ice-9 match)
-  #:export (lua-type 
-            ;; Arith operation
+  #:export (;; Arith operation
             lua-add lua-minus lua-multi lua-div lua-mod lua-expt
             ;; Logical operation
             lua-lt lua-eq lua-gt lua-geq lua-leq
@@ -36,45 +37,72 @@
 
 ;; TODO: how to print table and function?
 (define (lua-print x)
-  ;;(display x)(newline)
   `(call (primitive display) ,x))
 
-(define (emit-tree-il-from-function obj)
-  (match obj
-    (($ <lua-function> ($ <lua-type> _ name value))
-     `(call (primitive ,op) (const ,x) (const ,y)))
-    (else (error emit-tree-il-from-function "Invalid <lua-function> object!" obj))))
+(define (emit-tree-il-from-primitive op x y)
+  `(call (primitive ,op) ,x ,y))
 
-(::define (%lua-num-num-arith op x y env)
-  ((number number) -> (number))
-  (try-to-optimize-op x y env))
+(define-macro (define-primitive-emitter op)
+  `(define (,(symbol-append 'lua-primiitve- op) x y)
+     (emit-tree-il-from-primitive ',op x y)))
 
-(::define (%lua-str-num-arith op x y env)
-  ((string number) -> (number))
-  (try-to-optimize-op op x y env))
+(define-primitive-emitter +)
+(define-primitive-emitter -)
+(define-primitive-emitter *)
+(define-primitive-emitter /)
+(define-primitive-emitter modulo)
+(define-primitive-emitter expt)
 
-(::define (%lua-str-str-arith op x y env)
-  ((string string) -> (string))
-  (try-to-optimize-op op x y env))
+(define *strnum-re* (string->sre "0x([a-zA-Z0-9]+)"))
+(define (str->num x)
+  ;; NOTE: According to Lua actual activity, if a string can't be converted to a number,
+  ;;       say, "0xaz", it will produce a string "0xaz".
+  ;; NOTE: Guile will check the type again in the low-level, so we will not check it here.;
+  (define (%string->number s)
+    (cond
+     ((number? s) s)
+     (else
+      (let ((sn (irregex-replace *strnum-re* s "#x" 1)))
+        (cond
+         ((string->number sn) => identity)
+         (else s))))))
+  (match x
+    (('const v) `(const ,(%string->number v)))
+    (else (error str->num "Invalid AST node!" x))))
 
-(define (lua-arith op x y env)
-  (match (get-types/vals x y)
+(define (lua-arith emitter x y)
+  (match (get-ast-types x y)
     ('(number number)
-     (%lua-num-num-arith op x y env))
+     (emitter x y))
     ('(string number)
-     (%lua-str-num-arith op x y env))
+     (emitter (str->num x) y))
     ('(number string)
-     (%lua-str-num-arith op y x env))
+     (emitter x (str->num y)))
     ('(string string)
-     (%lua-str-num-arith op x y env))
-    (else (error lua-arith "Fatal: invalid pattern!" (get-types/vals x y)))))
+     (emitter (str->num x) (str->num y)))
+    ((('lexical-ref name rename) 'number)
+     (emitter `(call (@@ (language lua impl) str->num)
+                     (lexical-ref ,name ,rename))
+              y))
+    (('number ('lexical-ref name rename))
+     (emitter x `(call (@@ (language lua impl) str->num)
+                       (lexical-ref ,name ,rename))))
+    (('string ('lexical-ref name rename))
+     (emitter (str->num x)
+              `(call (@@ (language lua impl) str->num)
+                     (lexical-ref ,name ,rename))))
+    ((('lexical-ref name rename) 'string)
+     (emitter `(call (@@ (language lua impl) str->num)
+                     (lexical-ref ,name ,rename))
+              (str->num y)))
+    (else (error lua-arith "Fatal: invalid pattern!" (get-ast-types x y)))))
 
-(define (lua-add x y) (lua-arith 'arith-add x y))
-(define (lua-minus x y) (lua-arith 'arith-minus x y))
-(define (lua-multi x y) (lua-arith 'arith-multi x y))
-(define (lua-div x y) (lua-arith 'arith-div x y))
-(define (lua-mod x y) (lua-arith 'arith-modulo x y))
-(define (lua-expt x y) (lua-arith 'arith-expt x y))
+(define (lua-add x y) (lua-arith lua-primiitve-+ x y))
+(define (lua-minus x y) (lua-arith lua-primiitve-- x y))
+(define (lua-multi x y) (lua-arith lua-primiitve-* x y))
+(define (lua-div x y) (lua-arith lua-primiitve-/ x y))
+(define (lua-mod x y) (lua-arith lua-primiitve-modulo x y))
+(define (lua-expt x y) (lua-arith lua-primiitve-expt x y))
 
 ;; return value is guile-boolean 
 ;; FIXME: add type checking
@@ -87,6 +115,7 @@
 (define (lua-geq x y) (lua-compare '>= x y))
 (define (lua-leq x y) (lua-compare '<= x y))
 
+;; NOTE: built-in functions are unnecessariely
 (define *built-in-functions*
   `(("print" . ,lua-print)))
 
