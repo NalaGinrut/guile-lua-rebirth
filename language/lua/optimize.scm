@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014
+;;  Copyright (C) 2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -16,6 +16,8 @@
 (define-module (language lua optimize)
   #:use-module (language lua types)
   #:use-module (language lua peval)
+  #:use-module (language lua lir)
+  #:use-module (ice-9 match)
   #:export (lua-optimize
             try-to-optimize-op))
 
@@ -24,9 +26,12 @@
 ;; New optimizing pass could be added, but maybe unecessary, since Guile will do
 ;; all the rest full-stack optimizing, in principle. But some Lua specific optimizing
 ;; maybe needed though.
-(define* (lua-optimize x env #:key (peval? #t))
-  (and peval? (peval x env)))
+;; NOTE: peval accept lir only, so we have to convert ast to lir before pass it in.
+;; NOTE: tree-il compiler accept ast only, so we need to convert lir to ast again.
+(define* (lua-optimize x env #:key (peval? #f))
+  (if peval?
+      (lir->ast (peval (ast->lir x) env))
+      x))
 
 (define-syntax-rule (try-to-reduce-func-call op x y env)
-  (let ((func (gen-function (->arity
-  (lua-optimize func env))
+  #t)
