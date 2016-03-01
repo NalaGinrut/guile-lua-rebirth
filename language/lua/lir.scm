@@ -21,7 +21,6 @@
 
 ;; LIR stands for Lua IR, a simple typed IR for optimizing.
 
-
 (define (ast->lir ast)
   (match ast
     ;; Literals
@@ -107,10 +106,99 @@
     (`(func-call (id ,func) (args ,args))
      `(func-call (id ,func) (arts ,(map ast->lir args))))
     (('func-def `(id ,func) ('params p ...) body)
-     `(func-def (id ,func) (params ,(ast->lir p)) ,(ast->lir body)))
+     `(func-def (id ,func) (params ,p) ,(ast->lir body)))
+    (('anon-func-def params body)
+     `(anon-func-def ,params ,body))
 
-    ;; TODO: finish the rest
     (else (error ast->lir "invalid ast" ast))))
 
-(define (lir->ast x)
-  #t)
+(define (lir->ast lir)
+  (match lir
+    ;; Literals
+    ((? <lua-nil>?)
+     '(marker nil))     
+    ((? lua-true?)
+     '(boolean true))
+    ((? lua-false?)
+     '(boolean false))
+    ((? <lua-number>? num)
+     `(number ,(<lua-type>-value num)))
+    ((? <lua-string>? str)
+     `(string ,(<lua-type>-value str)))
+
+    ;; variables
+    (`(variable ,x)
+     `(variable ,(lir->ast x)))
+
+    (`(store ,x ,v)
+     `(store ,x ,(lir->ast v)))
+
+    ;; scope and statment
+    (('scope rest)
+     `(scope ,(lir->ast rest)))
+    (('begin form ...)
+     `(begin ,(lir->ast form)))
+    (('begin forms ...)
+     `(begin ,@(map (lambda (x) (lir->ast x)) forms)))
+    (('if cnd 'then b1)
+     `(if ,(lir->ast cnd) then ,(lir->ast b1)))
+    (('if cnd 'then b1 else b2)
+     `(if ,(lir->ast cnd)
+          then
+          ,(lir->ast b1)
+          else
+          ,(lir->ast b2)))
+    (('if cnd 'then b1 'elseif c2 'then b2 . rest)
+     (define (-> x)
+       (match x
+         (() #t)
+         (('elseif c 'then b . r)
+          `(elseif ,(lir->ast c)
+                   then
+                   ,(lir->ast b)
+                   (-> r)))
+         (else error lir->ast "BUG: Shouldn't be here!" x)))
+     `(if ,(lir->ast cnd)
+          then
+          ,(lir->ast b1)
+          elseif
+          ,(lir->ast c2)
+          then
+          ,(lir->ast b2)
+          (-> x)))
+
+    ;; arithmatic op
+    (`(add ,x ,y)
+     `(add ,(lir->ast x) ,(lir->ast y)))
+    (`(minus ,x ,y)
+     `(minus ,(lir->ast x) ,(lir->ast y)))
+    (`(multi ,x ,y)
+     `(multi ,(lir->ast x) ,(lir->ast y)))
+    (`(div ,x ,y)
+     `(div ,(lir->ast x) ,(lir->ast y)))
+    (`(mod ,x ,y)
+     `(mod ,(lir->ast x) ,(lir->ast y)))
+    (`(expt ,x ,y)
+     `(expt ,(lir->ast x) ,(lir->ast y)))
+
+    ;; logical op
+    (`(lt ,x ,y)
+     `(lt ,(lir->ast x) ,(lir->ast y)))
+    (`(gt ,x ,y)
+     `(gt ,(lir->ast x) ,(lir->ast y)))
+    (`(eq ,x ,y)
+     `(eq ,(lir->ast x) ,(lir->ast y)))
+    (`(geq ,x ,y)
+     `(geq ,(lir->ast x) ,(lir->ast y)))
+    (`(leq ,x ,y)
+     `(leq ,(lir->ast x) ,(lir->ast y)))
+
+    ;; functions
+    (`(func-call (id ,func) (args ,args))
+     `(func-call (id ,func) (arts ,(map lir->ast args))))
+    (('func-def `(id ,func) ('params p ...) body)
+     `(func-def (id ,func) (params ,p) ,(lir->ast body)))
+    (('anon-func-def params body)
+     `(anon-func-def ,params ,body))
+
+    (else (error lir->ast "invalid lir" lir))))
