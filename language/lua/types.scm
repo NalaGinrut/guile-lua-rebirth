@@ -65,7 +65,9 @@
             lua-boolean?
             lua-nil?
 
-            is-immediate-object?))
+            is-immediate-object?
+            ast-typeof
+            get-ast-types))
 
 ;; Lua supports duck typing as part of the Metatable weak-typing system.
 ;; Any reference to a table's member function is checked dynamically at run-time.
@@ -154,6 +156,18 @@
   (string? obj))
 (define (lua-boolean? obj)
   (boolean? obj))
+
+(define (ast-typeof o)
+  (match o
+    (('const c)
+     (cond
+      ((lua-number? c) 'number)
+      ((lua-string? c) 'string)
+      (else (error ast-typeof "Fatal0: Invalid type!" c))))
+    (else error ast-typeof "Fatal1: Invalid object!" o)))
+
+(define (get-ast-types o1 o2)
+  (map ast-typeof (list o1 o2)))
 
 ;;(define (get-types/vals x . y)
 ;;  (apply lua-type-map lua-type/value x y))
