@@ -21,6 +21,8 @@
   #:use-module (language lua optimize)
   #:use-module (language tree-il)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 pretty-print)
+  #:use-module (srfi srfi-1)
   #:export (compile-tree-il))
 
 (define (lua-init)
@@ -30,8 +32,11 @@
   (values
    (parse-tree-il
     (begin (lua-init)
-           (comp (lua-optimize exp env)
-                 (current-top-level-environment))))
+           (let ((xxx (comp (lua-optimize exp env)
+                            (current-top-level-environment))))
+             (format #t "Tree-IL: ~%")
+             (pretty-print xxx)
+             xxx)))
    env
    env))
 
@@ -50,8 +55,11 @@
                (-> (begin (proc v)
                           (-> (lexical v v)))))))
 
-(define (->gensym x)
-  `(const ,(newsym x)))
+(define (id-gensym x)
+  (match x
+    ('(void) #f)
+    (('id id) (gensym id))
+    (else (error id-gensym "Invalid id pattern!" x))))
 
 ;; NOTE: But Lua is imperitive language, so I'm afraid the binding (with let)
 ;;       is useless for it. Since imperitive languages uses assignment instead.
@@ -85,6 +93,13 @@
   (or (defined? o the-root-module)
       (memq o *toplevel-ops*)))
 
+(define (extract-ids ids)
+  (map (lambda (x)
+         (match x
+           (`(id ,id) (string->symbol id))
+           (else (error extract-ids "Invalid ids pattern!" x))))
+       ids))
+
 (define *default-toplevel-module* (resolve-module '(guile-user)))
 
 ;; FIXME: It's useless to check toplevel/primitives.
@@ -98,26 +113,30 @@
   ;;       which is for primitives.
   (defined? v *default-toplevel-module*))
 
+(define (multi-exps? x)
+  (match x
+    (`(multi-exps ,rest ...) #t)
+    (else #f)))
+
 (define (->scope id pred)
   (cond
    ((pred id) `(toplevel ,id))
    (else `(lexical ,id ,(newsym id)))))
 
+(define (->toplevel-op op) `(toplevel ,op))
 (define (->op op) (->scope op is-toplevel-op?))
 (define (->var var) (->scope var is-toplevel-var?))
-(define (->val v)
-  (match v
-    ((? self-evaluating? val) `(const ,val))
-    (else (->var v))))
 
-(define (->call f args)
-  `(call ,(->op f) ,@(map ->val args)))
+(define (->call f trans args)
+  (cond
+   ((null? args) `(call ,(trans f)))
+   (else `(call ,(trans f) ,@args))))
 
-(define (body-expander . body)
+(define (body-expander e . body)
   (match body
     (() '())
-    (((op args ...) rest ...) `((call ,(->op op) ,@(map ->val args) ...) ,@(apply body-expander rest)))
-    (else "no")))
+    ((expr rest ...) `(,(comp expr e) ,@(apply body-expander rest)))
+    (else (error body-expander "Invalid body pattern!" body))))
 
 ;; <lambda>
 ;; GRAMMAR:
@@ -136,41 +155,52 @@
 ;; e.g: (lambda () (lambda-case ((() #f #f #f () ()) (const 1))))
 ;;
 ;; 2. (lambda (x) 3) 
-;; e.g: (lambda () (lambda-case (((x) #f #f #f () ((call (primitive gensym) (const "x ")))) (const 3))))
+;; e.g: (lambda () (lambda-case (((x) #f #f #f () (x1)) (const 3))))
 ;;
 ;; 3. (lambda (. y) 3)
-;; e.g: (lambda () (lambda-case ((() #f y #f () ((call (primitive gensym) (const "x ")))) (const 3))))
+;; e.g: (lambda () (lambda-case ((() #f y #f () ()) (const 3))))
 ;;
 ;; 4. (lambda (x y . z) 3)
-;; e.g: (lambda () (lambda-case (((x y) #f z #f () ((const x1) (const y1) (const z2))) (const 3))))
+;; e.g: (lambda () (lambda-case (((x y) #f z #f () (x1 y1 z2)) (const 3))))
 ;;
 ;; NOTE: *Maybe* we don't need to support kargs (in Lua), hmm...dunno
 ;; NOTE: There's no actual lambda-case syntax in Lua, so `alternate' is useless.
 ;; TODO: use procedual Tree-IL to keep source information.
 (define-syntax ->lambda
   (syntax-rules ()
-    ((_ () body ...) ; thunk
-     `(lambda ()
-        (lambda-case
-         ((() #f #f #f () ()) ,(body-expander body ...)))))
+    ((_ e () body ...) ; thunk
+     `(lambda-case
+       ((() #f #f #f () ()) ,(comp body ... e))))
     ((_ e (arg arg* ...) body ...) ; common lambda
-     (let ((renames (map (lambda (s)
-                           (let ((ss (->gensym s)))
-                             (lua-static-scope-set! e s ss)
-                             ss))
-                         '(arg arg* ...))))
-       `(lambda ()
-          (lambda-case
-           (((arg arg* ...) #f #f #f () ,renames) ,(body-expander body ...))))))
+     (let ((renames (filter-map (lambda (s)
+                                  (match s
+                                    ('(void) #f)
+                                    ((? symbol? id)
+                                     (let ((ss (newsym id)))
+                                       (lua-static-scope-set! e id ss)
+                                       ss))
+                                    (else (error "->lambda: [1] Invalid id pattern!" s))))
+                                arg arg* ...)))
+       (cond
+        ((null? renames) (->lambda e () body ...))
+        (else
+         `(lambda-case
+           (((,@arg ,@arg* ...) #f #f #f () ,renames) ,(comp body ... e)))))))
     ((_ e (arg arg* ... . args) body ...) ; optional-args lambda
-     (let ((renames (map (lambda (s)
-                           (let ((ss (->gensym s)))
-                             (lua-static-scope-set! e s ss)
-                             ss))
-                         '(arg arg* ... args))))
-       `(lambda ()
-          (lambda-case
-           (((arg arg* ...) #f args #f () ,renames) ,(body-expander body ...))))))))
+     (let ((renames (filter-map (lambda (s)
+                                  (match s
+                                    ('(void) #f)
+                                    ((? symbol? id)
+                                     (let ((ss (newsym id)))
+                                       (lua-static-scope-set! e id ss)
+                                       ss))
+                                    (else (error "->lambda: [2] Invalid id pattern!" s))))
+                                arg arg* ... args)))
+       (cond
+        ((null? renames) (->lambda e () body ...))
+        (else
+         `(lambda-case
+           (((,@arg ,@arg* ...) #f args #f () ,renames) ,(comp body ... e)))))))))
 
 (define (->return vals)
   (cond
@@ -182,7 +212,7 @@
 
 (define (comp src e)
   (define (%rename x)
-    (get-val-from-scope x e))
+    (get-val-from-scope (string->symbol x) e))
   (display src)(newline)
   (format #t "ENV: ~a~%" (hash-map->list cons (lua-env-symbol-table e)))
   (match src
@@ -194,9 +224,13 @@
     ('(boolean false)
      '(const false))
     (`(number ,x)
-     (-> (const x)))
+     `(const ,x))
     (`(string ,x)
-     (-> (const x)))
+     `(const ,x))
+
+    (('multi-exps exps ...)
+     (format #t "EEE: ~a~%" exps)
+     (map (lambda (ex) (comp ex e)) exps))
 
     ;; ref and assignment
     (`(variable ,x) ; global ref
@@ -204,11 +238,12 @@
     (`(assign ,x ,v) ; global assignment
      `(set! (toplevel ,x) ,(comp v e)))
     (`(local (variable ,x)) ; local ref
-     `(lexical-ref ,x ,(%rename x)))
+     `(lexical ,x ,(%rename x)))
     (`(local (assign ,x ,v)) ; local assignment
      `(set! (lexical ,x ,(%rename x)) ,(comp v e)))
     (`(id ,id)
-     `(lexical-ref ,id ,(%rename id)))
+     ;; NOTE: here we will exploit
+     `(lexical ,id ,(%rename id)))
 
     ;; scope and statment
     ;; FIXME: we need lexical scope
@@ -268,22 +303,27 @@
 
     ;; functions
     (`(func-call (id ,func) (args ,args))
-     ;;(display func)(newline)
+     (format #t "FFF: ~a~%" args)
      (cond
       ((is-lua-builtin-func? func)
        => (lambda (f) (f (comp args e))))
-      ((lua-static-scope-ref func e)
-       => (lambda (f) (f (comp args e))))
       (else
-       (->call (string->symbol func) (comp args e)))))
+       (->call (string->symbol func)
+               ->toplevel-op
+               (if (multi-exps? args)
+                   (comp args e)
+                   (list (comp args e)))))))
     (('func-def `(id ,func) ('params p ...) body)
+     (format #t "PPP: ~a~%" p)
      `(define
         ,(string->symbol func)
-        ,(->lambda e (p ...) (comp body e))))
+        (lambda ((name . ,(string->symbol func)))
+          ,(->lambda e ((extract-ids p)) body))))
     (`(local (func-def (id ,func) (params ,p ...) ,body))
      `(define
         (lexical ,(string->symbol func))
-        ,(->lambda e (p ...) (comp body e))))
+        (lambda ((name . ,(string->symbol func)))
+          ,(->lambda e ((extract-ids p)) body))))
     (('anon-func-def body ...)
      ;; TODO: implement anonymous function
      #t)
