@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014
+;;  Copyright (C) 2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -22,8 +22,6 @@
 (define-module (language lua peval)
   #:use-module (language lua utils)
   #:use-module (language lua types)
-  #:use-module ((language lua compile-tree-il)
-                #:select (->lambda))
   #:use-module (ice-9 match)
   #:export (peval))
 
@@ -148,7 +146,9 @@
     ;;    application serves as the result of partial evaluation.
     (((? <lua-function>? func) x y)
      ;; TODO: Should apply this func as possible.
-     (let ((func (get-proper-func
+     ;; STOP: This partial-function apply shouldn't do anything here, since we have to make sure the function
+     ;;       is pure-functinal, that'll introduce more complexities to do effects analysis. Just leave it
+     ;;       alone here, and let Guile do it properly.
      pattern)
 
     ;; TODO
