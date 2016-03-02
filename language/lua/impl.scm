@@ -54,22 +54,20 @@
 (define-primitive-emitter expt)
 
 (define *strnum-re* (string->sre "0x([a-zA-Z0-9]+)"))
-(define (str->num x)
+(define (str->num s)
   ;; NOTE: According to Lua actual activity, if a string can't be converted to a number,
   ;;       say, "0xaz", it will produce a string "0xaz".
   ;; NOTE: Guile will check the type again in the low-level, so we will not check it here.;
-  (define (%string->number s)
-    (cond
-     ((number? s) s)
-     (else
-      (let ((sn (irregex-replace *strnum-re* s "#x" 1)))
-        (cond
-         ((string->number sn) => identity)
-         (else s))))))
-  (match x
-    (('const v) `(const ,(%string->number v)))
-    (else (error str->num "Invalid AST node!" x))))
+  (cond
+   ((number? s) s)
+   (else
+    (let ((sn (irregex-replace *strnum-re* s "#x" 1)))
+      (cond
+       ((string->number sn) => identity)
+       (else s))))))
 
+;; NOTE: cross module function doesn't need to be tree-il, so the function just return the
+;;       common value. Don't convert to (const v)!!!
 (define (lua-arith emitter x y)
   (match (get-ast-types x y)
     ('(number number)
@@ -80,20 +78,20 @@
      (emitter x (str->num y)))
     ('(string string)
      (emitter (str->num x) (str->num y)))
-    ((('lexical-ref name rename) 'number)
+    ((('lexical name rename) 'number)
      (emitter `(call (@@ (language lua impl) str->num)
-                     (lexical-ref ,name ,rename))
+                     (lexical ,(string->number name) ,rename))
               y))
-    (('number ('lexical-ref name rename))
+    (('number ('lexical name rename))
      (emitter x `(call (@@ (language lua impl) str->num)
-                       (lexical-ref ,name ,rename))))
-    (('string ('lexical-ref name rename))
+                       (lexical ,(string->symbol name) ,rename))))
+    (('string ('lexical name rename))
      (emitter (str->num x)
               `(call (@@ (language lua impl) str->num)
-                     (lexical-ref ,name ,rename))))
-    ((('lexical-ref name rename) 'string)
+                     (lexical ,(string->symbol name) ,rename))))
+    ((('lexical name rename) 'string)
      (emitter `(call (@@ (language lua impl) str->num)
-                     (lexical-ref ,name ,rename))
+                     (lexical ,(string->symbol name) ,rename))
               (str->num y)))
     (else (error lua-arith "Fatal: invalid pattern!" (get-ast-types x y)))))
 
