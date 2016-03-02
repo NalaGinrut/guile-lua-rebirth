@@ -51,8 +51,8 @@
    ;;((lua-table? obj) `(table ,obj))
    (else '(unknown #f))))
 
-(define (ftt-pred t ann)
-  (rbt-make-PRED t = > < ann))
+;;(define (ftt-pred t ann)
+;;  (rbt-make-PRED t = > < ann))
 
 (define *function-type-table*
   ;;(new-rb-tree))
@@ -79,23 +79,15 @@
 ;; (::define (add x y)
 ;;  ((int int) -> int)
 ;;  (+ x y))
-(define-syntax ::define
-  (syntax-rules (->)
-    ((_ (op x x* ...) ((type type* ...) -> func-type) body ...)
-     (::define op ((type type* ...) -> func-type) (lambda (x x* ...) body ...)))
-    ((_ op ((type type* ...) -> func-type) (lambda (x x* ...) body ...))
-     (begin
-       (ftt-add! 'op `((type type* ...) -> func-type))
-       (define (op x x* ...)
-         (let ((ret (match (get-types x x* ...)
-                      ('(type type* ...)
-                       body ...)
-                      (else (error op "Error while args type checking!"
-                                   'type 'type* ... x x* ...)))))
-           (if (eq? (lua-typeof ret) 'func-type)
-               ret
-               (error op "Error while ret type checking!"
-                      'func-type ret (lua-typeof ret)))))))))
+(define-syntax ::register
+  (lambda (x)
+    (syntax-case x (->)
+      ((_ (op x y) ((tx ty) -> func-type))
+       (and (identifier? #'op) (identifier? #'tx) (identifier? #'ty))
+       (ftt-add! '#,(datum->syntax #'primname (symbol-append '+ (syntax->datum #'op)
+                                                             '- (syntax->datum #'tx)
+                                                             '- (syntax->datum #'ty)))
+                 '((tx ty) -> func-type))))))
 
 ;; --- Runtime Type Checking ---
 ;; 1. We use DFA for the type checking.
@@ -177,7 +169,7 @@
           (or (eq? ty (lua-typeof y)) (err y)))
      (let ((xx (optimize x env peval?))
            (yy (optimize y env peval?)))
-       `(,tf ,(call-arith-op/typed tx ty op xx yy))))
+       `(,tf ,(call-arith-op/typed tx ty op xx yy env peval?))))
     (else (error "Type-checking: No such arith rule was registered!" op)))) 
 
 (define (check/cond cnd env peval?)
@@ -187,30 +179,31 @@
      (else e))))
  
 (define (try-to-guess-func-type fname fargs env peval?)
-  (define (guess-from-ftt args)
-    (ftt-ref
-     (map (lambda (sym)
-            (car (type-guessing (get-val-from-scope sym env))))
-          args)))
-  (define (call-lua-func func fname fargs env peval?)
-    ;; Format of arity: (args-cnt has-opt-args?)
-    ;; NOTE:
-    ;; 1. In Lua-5.0, there'll be a magic variable named `arg' to hold opt-args as a table;
-    ;; 2. But in Lua-5.1+, you have to use `...' for the same purpose, say:
-    ;;    local arg = {...}
-    ;; 3. guile-lua-rebirth is compatible with 5.2
-    (define (->arity args)
-      (match args
-        ((? list? ll) (list (length ll) #f)) 
-        ('(id "...") (list 0 #t))
-        (else (error ->arity "Ivalid args for generating arity!" args))))
-    (let* ((r (apply-the-func func fargs env peval?))
-           (ft (gen-function fname (->arity fargs) fargs (try-to-guess-type r))))
-      (if peval?
-          (lua-optimize ft env peval?)
-          ft)))
-  (or (guess-from-ftt args)
-      (call-lua-func func fname fargs env peval?)))
+  ;; (define (guess-from-ftt args)
+  ;;   (ftt-ref
+  ;;    (map (lambda (sym)
+  ;;           (car (type-guessing (get-val-from-scope sym env))))
+  ;;         args)))
+  ;; (define (call-lua-func func fname fargs env peval?)
+  ;;   ;; Format of arity: (args-cnt has-opt-args?)
+  ;;   ;; NOTE:
+  ;;   ;; 1. In Lua-5.0, there'll be a magic variable named `arg' to hold opt-args as a table;
+  ;;   ;; 2. But in Lua-5.1+, you have to use `...' for the same purpose, say:
+  ;;   ;;    local arg = {...}
+  ;;   ;; 3. guile-lua-rebirth is compatible with 5.2
+  ;;   (define (->arity args)
+  ;;     (match args
+  ;;       ((? list? ll) (list (length ll) #f)) 
+  ;;       ('(id "...") (list 0 #t))
+  ;;       (else (error ->arity "Ivalid args for generating arity!" args))))
+  ;;   (let* ((r (apply-the-func func fargs env peval?))
+  ;;          (ft (gen-function fname (->arity fargs) fargs (try-to-guess-type r))))
+  ;;     (if peval?
+  ;;         (lua-optimize ft env peval?)
+  ;;         ft)))
+  ;; (or (guess-from-ftt args)
+  ;;     (call-lua-func func fname fargs env peval?)))
+  #t)
 
 (define-syntax-rule (->lua-type? t)
   (primitive-eval (symbol-append '<lua- t '>?)))
@@ -234,21 +227,21 @@
       ((<lua-unknown>? t)
        )))
     ('(unknown #f) (gen-unknown))
-    (`(scope ,n) `(scope ,(type-inference (new-scope env) peval?)))
+    (`(scope ,n) `(scope ,(type-inference n (new-scope env) #:peval? peval?)))
 
     ;; Primitives
     (((? arith-op? op) x y)
      (let ((xx (type-inference x env))
            (yy (type-inference y env)))
-       (type-inference (check/arith-op op xx yy env) env peval?)))
+       (type-inference (check/arith-op op xx yy env peval?) env #:peval? peval?)))
 
     ;; conditions
     (('if _ ...)
-     (type-inference (check/cond node env peval?) env peval?))
+     (type-inference (check/cond node env peval?) env #:peval? peval?))
 
     ;; functions
     (('func-call fname fargs)          
-     (type-inference (try-to-guess-func-type fname fargs env peval?) env peval?))
+     (type-inference (try-to-guess-func-type fname fargs env peval?) env #:peval? peval?))
 
     (else (error type-inference "Invalid type encountered!" node))))
 
