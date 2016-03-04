@@ -175,14 +175,15 @@
              ;;    (except when the call is enclosed in parentheses).
              (var-list comma var) : `(mul-vals ,$1 ,$3))
 
-   (exp-list (exp-list-stat exp) 
-             : (if (null? $1)
-                   $2
-                   `(multi-exps ,$1 ,$2)))
+   ;; Multi values returning
+   (exp-list (exp) : $1
+             (multi-exps) : `(multi-exps ,@$1))
 
-   (exp-list-stat () : '()
-                  ;; Multi values returning
-                  (exp-list comma) : $1)
+   (multi-exps (exp comma exp) : (list $1 $3)
+               (exp comma multi-exps) : `(,$1 ,@$3))
+
+   (exp-list-rest () : '()
+                  (exp) : $1)
 
    (range (exp comma exp range-rest)
           : (if (null? $4) 
