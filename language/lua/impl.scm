@@ -35,9 +35,19 @@
 ;;       new primitives. So we have to convert all the lua-specific-primitives to proper
 ;;       Guile primitives.
 
+;; NOTE: Cross module function should accept 'value only, not 'tree-il !!!
+;;       The reason is that the reduction of 'tree-ill will return 'value eventually, which means
+;;       the same cross module function will encounter both 'tree-il (compile time) and
+;;       'value (runtime), so we convert all arguments to 'value as convention here!
+
+(define (->stdlib-call lib prim . args)
+  `(call (@ (language lua stdlib ,lib) ,prim) ,@args))
+
 ;; TODO: how to print table and function?
+;; TODO: should accept multi-vals return as arguments.
 (define (lua-print x)
-  `(call (primitive display) ,x))
+  (->stdlib-call 'io 'primitive:lua-print
+                 `(lambda () (lambda-case ((() #f #f #f () ()) ,x)))))
 
 (define (emit-tree-il-from-primitive op x y)
   `(call (primitive ,op) ,x ,y))
@@ -53,22 +63,33 @@
 (define-primitive-emitter modulo)
 (define-primitive-emitter expt)
 
-(define *strnum-re* (string->sre "0x([a-zA-Z0-9]+)"))
-(define (str->num s)
+(define *strnum-re* (string->irregex "0x([a-zA-Z0-9]+)"))
+(define (%str->num x)
   ;; NOTE: According to Lua actual activity, if a string can't be converted to a number,
   ;;       say, "0xaz", it will produce a string "0xaz".
   ;; NOTE: Guile will check the type again in the low-level, so we will not check it here.;
-  (cond
-   ((number? s) s)
-   (else
-    (let ((sn (irregex-replace *strnum-re* s "#x" 1)))
+  (format #t "str->num: ~a~%" x)
+  (match x
+   ((? number?) x)
+   ((? string? str)
+    (let ((sn (irregex-replace *strnum-re* str "#x" 1)))
       (cond
-       ((string->number sn) => identity)
-       (else s))))))
+       ((string->number sn) => (lambda (n) `(const ,n)))
+       (else x))))
+   (else (error str->num "Invalid pattern!" x))))
+
+;; NOTE: Cross module inlined function should accept 'value only, not 'tree-il !!!
+(define (str->num x)
+  (define (fix o)
+    (match o
+      (('const v) v)
+      (else o)))
+  (%str->num (fix x)))
 
 ;; NOTE: cross module function doesn't need to be tree-il, so the function just return the
 ;;       common value. Don't convert to (const v)!!!
 (define (lua-arith emitter x y)
+  (format #t "lua-arith: ~a (~a, ~a)~%" emitter x y)
   (match (get-ast-types x y)
     ('(number number)
      (emitter x y))
@@ -80,19 +101,24 @@
      (emitter (str->num x) (str->num y)))
     ((('lexical name rename) 'number)
      (emitter `(call (@@ (language lua impl) str->num)
-                     (lexical ,(string->number name) ,rename))
+                     (lexical ,name ,rename))
               y))
-    (('number ('lexical name rename))
+    (('number whatever)
      (emitter x `(call (@@ (language lua impl) str->num)
-                       (lexical ,(string->symbol name) ,rename))))
-    (('string ('lexical name rename))
+                       ,y)))
+    (('string whatever)
      (emitter (str->num x)
               `(call (@@ (language lua impl) str->num)
-                     (lexical ,(string->symbol name) ,rename))))
-    ((('lexical name rename) 'string)
+                     ,y)))
+    ((whatever 'string)
      (emitter `(call (@@ (language lua impl) str->num)
-                     (lexical ,(string->symbol name) ,rename))
+                     ,x)
               (str->num y)))
+    ((whatever1 whatever2)
+     (emitter `(call (@@ (language lua impl) str->num)
+                     ,x)
+              `(call (@@ (language lua impl) str->num)
+                     ,y)))
     (else (error lua-arith "Fatal: invalid pattern!" (get-ast-types x y)))))
 
 (define (lua-add x y) (lua-arith lua-primiitve-+ x y))
@@ -113,7 +139,7 @@
 (define (lua-geq x y) (lua-compare '>= x y))
 (define (lua-leq x y) (lua-compare '<= x y))
 
-;; NOTE: built-in functions are unnecessariely
+;; NOTE: built-in functions are unnecessarily to use a table for fetching, IMO...
 (define *built-in-functions*
   `(("print" . ,lua-print)))
 
