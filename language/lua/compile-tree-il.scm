@@ -96,6 +96,7 @@
 (define (extract-ids ids)
   (map (lambda (x)
          (match x
+           ('(void) 'void)
            (`(id ,id) (string->symbol id))
            (else (error extract-ids "Invalid ids pattern!" x))))
        ids))
@@ -115,7 +116,7 @@
 
 (define (multi-exps? x)
   (match x
-    (`(multi-exps ,rest ...) #t)
+    (('multi-exps rest ...) #t)
     (else #f)))
 
 (define (->scope id pred)
@@ -128,6 +129,7 @@
 (define (->var var) (->scope var is-toplevel-var?))
 
 (define (->call f trans args)
+  (format #t "->call: ~a~%" args)
   (cond
    ((null? args) `(call ,(trans f)))
    (else `(call ,(trans f) ,@args))))
@@ -203,16 +205,19 @@
            (((,@arg ,@arg* ...) #f args #f () ,renames) ,(comp body ... e)))))))))
 
 (define (->return vals)
-  (cond
-   ((null? vals) '(const nil))
-   (else `(call (primitive values) ,@vals))))
+  (format #t "RRR: ~a~%" vals)
+  (match vals
+    (() '(const nil))
+    (((x1 ...) (x2 ...) rest ...)
+     `(call (primitive values) ,@vals))
+    (else vals)))
 
 ;; for emacs:
 ;; (put 'match 'scheme-indent-function 1)
 
 (define (comp src e)
   (define (%rename x)
-    (get-val-from-scope (string->symbol x) e))
+    (get-val-from-scope x e))
   (display src)(newline)
   (format #t "ENV: ~a~%" (hash-map->list cons (lua-env-symbol-table e)))
   (match src
@@ -230,7 +235,7 @@
 
     (('multi-exps exps ...)
      (format #t "EEE: ~a~%" exps)
-     (map (lambda (ex) (comp ex e)) exps))
+     (map (lambda (exp) (comp exp e)) exps))
 
     ;; ref and assignment
     (`(variable ,x) ; global ref
@@ -238,12 +243,14 @@
     (`(assign ,x ,v) ; global assignment
      `(set! (toplevel ,x) ,(comp v e)))
     (`(local (variable ,x)) ; local ref
-     `(lexical ,x ,(%rename x)))
+     (let ((symid (string->symbol x)))
+       `(lexical ,symid ,(%rename symid))))
     (`(local (assign ,x ,v)) ; local assignment
-     `(set! (lexical ,x ,(%rename x)) ,(comp v e)))
+     `(set! (lexical ,x ,(%rename (string->symbol x))) ,(comp v e)))
     (`(id ,id)
      ;; NOTE: here we will exploit
-     `(lexical ,id ,(%rename id)))
+     (let ((symid (string->symbol id)))
+       `(lexical ,symid ,(%rename symid))))
 
     ;; scope and statment
     ;; FIXME: we need lexical scope
@@ -303,7 +310,7 @@
 
     ;; functions
     (`(func-call (id ,func) (args ,args))
-     (format #t "FFF: ~a~%" args)
+     (format #t "func-call: ~a~%" args)
      (cond
       ((is-lua-builtin-func? func)
        => (lambda (f) (f (comp args e))))
@@ -314,7 +321,7 @@
                    (comp args e)
                    (list (comp args e)))))))
     (('func-def `(id ,func) ('params p ...) body)
-     (format #t "PPP: ~a~%" p)
+     (format #t "func-def: ~a~%" p)
      `(define
         ,(string->symbol func)
         (lambda ((name . ,(string->symbol func)))
@@ -328,8 +335,8 @@
      ;; TODO: implement anonymous function
      #t)
     (('return vals ...)
-     (format #t "AAA: ~a~%" (->return (map (lambda (v) (comp v e)) vals)))
-     (->return (map (lambda (v) (comp v e)) vals)))
+     (format #t "return: ~a~%" vals)
+     (->return (if (null? vals) vals (comp (car vals) e))))
 
     ;; TODO: finish the rest
     (else (error comp "invalid src" src))))
