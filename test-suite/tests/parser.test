@@ -1,6 +1,6 @@
 ;;  Lua parser tests
 ;;  -*-  indent-tabs-mode:nil; coding: utf-8 -*-
-;;  Copyright (C) 2014
+;;  Copyright (C) 2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -78,6 +78,7 @@
     ("#'123' ^ 2" ; intended wrong exp! 
      ;; expt higher than hash
      ;; so the result is to get length from a number which should be wrong.
+     ;; ERRMSG: "attempt to perform arithmetic on a string value!"
      . (hash (expt (string "123") (number 2))))
     
     ))
@@ -160,6 +161,12 @@
                   (func-call (id "print") (args (id "b")))))))))
     ("return 1"
      . (return (number 1)))
+    ("return 1,2"
+     . (return (multi-exps (number 1) (number 2))))    
+    ("return 1,2,3"
+     . (return (multi-exps (number 1) (number 2) (number 3))))
+    ("return 1,2,3,4,5"
+     . (return (multi-exps (number 1) (number 2) (number 3) (number 4) (number 5))))    
     ("x=1 return x+1"
      . (begin (assign (id "x") (number 1))
               (return (add (id "x") (number 1)))))
@@ -213,6 +220,28 @@
         (id "a")
         (params (id "x"))
         (scope (return (add (number 1) (id "x"))))))
+
+    ("function a(x) return 10,1+x end"
+     . (func-def
+        (id "a")
+        (params (id "x"))
+        (scope (return
+                (multi-exps (number 10)
+                            (add (number 1) (id "x")))))))
+    ("function a(x,y) return y+x,1+x end"
+     . (func-def
+        (id "a")
+        (params (id "x") (id "y"))
+        (scope (return
+                (multi-exps (add (id "y") (id "x"))
+                            (add (number 1) (id "x")))))))
+    ("function a(x,y,z,a,b,c) return y+x,1+x end"
+     . (func-def
+        (id "a")
+        (params (id "x") (id "y") (id "z") (id "a") (id "b") (id "c"))
+        (scope (return
+                (multi-exps (add (id "y") (id "x"))
+                            (add (number 1) (id "x")))))))
     ("function t.a.b.c:f (x)
         print(self)
         return x
