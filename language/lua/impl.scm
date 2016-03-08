@@ -41,7 +41,7 @@
 ;;       'value (runtime), so we convert all arguments to 'value as convention here!
 
 (define (->stdlib-call lib prim . args)
-  `(call (@ (language lua stdlib ,lib) ,prim) ,@args))
+  `(call (@ (language lua stdlib ,lib) ,prim) ,@(fix-for-cross args)))
 
 ;; TODO: how to print table and function?
 ;; TODO: should accept multi-vals return as arguments.
@@ -80,11 +80,7 @@
 
 ;; NOTE: Cross module inlined function should accept 'value only, not 'tree-il !!!
 (define (str->num x)
-  (define (fix o)
-    (match o
-      (('const v) v)
-      (else o)))
-  (%str->num (fix x)))
+  (%str->num (fix-for-cross x)))
 
 ;; NOTE: cross module function doesn't need to be tree-il, so the function just return the
 ;;       common value. Don't convert to (const v)!!!
