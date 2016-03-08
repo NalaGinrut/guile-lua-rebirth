@@ -16,7 +16,6 @@
 (define-module (language lua scope)
   #:use-module (language lua utils)
   #:use-module ((rnrs) #:select (define-record-type))
-  ;;#:use-module (nashkel rbtree)
   #:export (lua-env
             lua-env?
             lua-env-upper-frame
@@ -24,6 +23,7 @@
             lua-env-symbol-table
 
             current-top-level-environment
+            reinit-lua-toplevel
 
             lua-local-set!
             lua-local-ref
@@ -37,11 +37,12 @@
             new-scope
 
             get-proper-func
-            get-val-from-scope))
+            get-val-from-scope
+            print-lua-env))
 
 ;; NOTE: Since Lua is not FP, we're not going to implement it as the functional
 ;;       static scope which means the upper level scope will be immutable. That
-;;       would be little complicated to be implemented efficient.
+;;       would be little complicated to be implemented efficiently.
 ;;       Now it'll be an imperitive static scope implementation. That's easier.
 
 (define-record-type lua-env
@@ -49,27 +50,21 @@
    (mutable upper-frame)
    symbol-table))
 
-;;(define (symbol-table-pred t sym)
-;;  (rbt-make-PRED t = > < (string-hash-ci sym)))
-
 (define (symbol-table-set! t sym val)
-  ;;(rb-tree-add! t sym val #:PRED symbol-table-pred))
   (hash-set! t sym val))
 
 (define (symbol-table-ref t sym)
-  ;;(rb-tree-search t sym #:PRED symbol-table-pred))
   (hash-ref t sym))
 
-;; TODO: symbol table should be Red Black Tree
-(define new-symbol-table make-hash-table) ;;new-rb-tree)
+(define new-symbol-table make-hash-table)
 
-(define *top-level-environment*
+(define (new-lua-toplevel)
   (make-lua-env #f ; top-level has no upper frame
                 (new-symbol-table)))
 
 ;; NOTE: fetch top-level directly
 (define current-top-level-environment
-  (make-parameter *top-level-environment*))
+  (make-parameter (new-lua-toplevel)))
 
 (define (lua-local-set! e sym val)
   (symbol-table-set! (lua-env-symbol-table e) sym val))
@@ -89,10 +84,10 @@
            (lua-static-scope-ref (lua-env-upper-frame e) sym))))
 
 (define (lua-global-set! sym val)
-  (symbol-table-set! *top-level-environment* sym val))
+  (symbol-table-set! (lua-env-symbol-table (current-top-level-environment)) sym val))
 
 (define (lua-global-ref sym)
-  (symbol-table-ref *top-level-environment* sym))
+  (symbol-table-ref (lua-env-symbol-table (current-top-level-environment)) sym))
 
 (define (new-scope e)
   (make-lua-env e (new-symbol-table)))
@@ -103,3 +98,8 @@
 (define (get-val-from-scope name env)
   (or (lua-static-scope-ref env name)
       (throw 'lua-error "No such identifier in the scope" name)))
+
+(define (print-lua-env e)
+  (hash-for-each (lambda (k v) (format #t "~a => ~a~%" k v)) (lua-env-symbol-table e))
+  (and (not (is-top-level? e))
+       (print-lua-env (lua-env-upper-frame e))))
