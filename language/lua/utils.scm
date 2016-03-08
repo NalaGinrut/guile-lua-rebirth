@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014
+;;  Copyright (C) 2013,2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -15,6 +15,7 @@
 
 (define-module (language lua utils)
   #:use-module (ice-9 q)
+  #:use-module (ice-9 match)
   #:use-module (srfi srfi-1)
   #:use-module (system base language)
   #:use-module (system base compile)
@@ -62,7 +63,8 @@
 
             ->list
             newsym
-            compile-string))
+            compile-string
+            fix-for-cross))
 
 (define (location x)
   (and (pair? x)
@@ -205,3 +207,8 @@
 
 (define (compile-string str . opts)
   (apply read-and-compile (open-input-string str) opts))
+
+(define (fix-for-cross o)
+  (match o
+    (('const v) v)
+    (else o)))
