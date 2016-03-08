@@ -26,7 +26,7 @@
   #:export (compile-tree-il))
 
 (define (lua-init)
-  #t) ;; nothing to do yet.
+  #t) ; nothing to do yet.
 
 (define (compile-tree-il exp env opts)
   (values
@@ -178,8 +178,9 @@
                                   (match s
                                     ('(void) #f)
                                     ((? symbol? id)
-                                     (let ((ss (newsym id)))
-                                       (lua-static-scope-set! e id ss)
+                                     (let ((ss (newsym id))
+                                           (ssv (lua-static-scope-ref e id)))
+                                       (lua-static-scope-set! e id (cons `(rename ,ss) (if ssv ssv '())))
                                        ss))
                                     (else (error "->lambda: [1] Invalid id pattern!" s))))
                                 arg arg* ...)))
@@ -194,7 +195,7 @@
                                     ('(void) #f)
                                     ((? symbol? id)
                                      (let ((ss (newsym id)))
-                                       (lua-static-scope-set! e id ss)
+                                       (lua-static-scope-set! e id `(rename ,ss))
                                        ss))
                                     (else (error "->lambda: [2] Invalid id pattern!" s))))
                                 arg arg* ... args)))
@@ -217,9 +218,11 @@
 
 (define (comp src e)
   (define (%rename x)
-    (get-val-from-scope x e))
+    (let ((ssv (get-val-from-scope x e)))
+      (or (assoc-ref ssv 'rename)
+          (error %rename "%rename: Invalid pattern!" ssv))))
   (display src)(newline)
-  (format #t "ENV: ~a~%" (hash-map->list cons (lua-env-symbol-table e)))
+  (format #t "ENV:~%") (print-lua-env e)
   (match src
     ;; Literals
     ('(marker nil)
@@ -238,26 +241,42 @@
      (map (lambda (exp) (comp exp e)) exps))
 
     ;; ref and assignment
-    (`(variable ,x) ; global ref
-     `(toplevel ,x))
-    (`(assign ,x ,v) ; global assignment
-     `(set! (toplevel ,x) ,(comp v e)))
-    (`(local (variable ,x)) ; local ref
-     (let ((symid (string->symbol x)))
+    (`(variable (id ,id)) ; global ref
+     (cond
+      ((lua-global-ref id)
+       `(toplevel ,(string->symbol id)))
+      (else '(const nil))))
+    (`(assign (id ,id) ,v) ; global assignment
+     (let ((symid (string->symbol id))
+           (vv (comp v e)))
+       (when (not (lua-global-ref symid)) (lua-global-set! symid vv))
+       `(begin
+          (define ,symid ,vv)
+          (set! (toplevel ,symid) ,vv))))
+    (`(local (variable (id ,id))) ; local ref
+     (let ((symid (string->symbol id)))
        `(lexical ,symid ,(%rename symid))))
-    (`(local (assign ,x ,v)) ; local assignment
-     `(set! (lexical ,x ,(%rename (string->symbol x))) ,(comp v e)))
+    (`(local (assign (id ,id) ,v)) ; local assignment
+     (let ((vv (comp v e))
+           (rid (%rename (string->symbol id)))
+           (symid (string->symbol id)))
+       (when (not (lua-static-scope-ref e symid))
+             (lua-static-scope-set! e symid `((rename ,rid) (value ,vv))))
+       `(set! (lexical ,id ,rid) ,vv)))
     (`(id ,id)
      ;; NOTE: here we will exploit
      (let ((symid (string->symbol id)))
-       `(lexical ,symid ,(%rename symid))))
+       (cond
+        ((lua-global-ref symid)
+         `(toplevel ,symid))
+        (else `(lexical ,symid ,(%rename symid))))))
 
     ;; scope and statment
     ;; FIXME: we need lexical scope
     (('scope rest)
      ;;(display rest)(newline)
      (comp rest (new-scope e)))
-    (('begin form ...)
+    (('begin form)
      (comp form e))
     (('begin forms ...)
      `(begin ,@(map (lambda (x) (comp x e)) forms)))
