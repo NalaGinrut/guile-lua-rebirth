@@ -18,11 +18,15 @@
   #:use-module (ice-9 format)
   #:export (primitive:lua-print))
 
+;; NOTE: `print' returns nothing (unspecified in Guile). A variable assigned to
+;;       `print' application result should get `nil' as its value.
 (define (primitive:lua-print thunk)
   (define (fix x)
-    (cond
-     ((boolean? x) (if x 'true 'false))
-     (else x)))
+    (match x
+      ((? boolean?) (if x 'true 'false))
+      ('(marker nil) 'nil)
+      ((? unspecified?) "")
+      (else x)))
   (call-with-values
       (lambda () (thunk))
     (lambda args
