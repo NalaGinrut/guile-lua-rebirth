@@ -100,6 +100,10 @@
       (throw 'lua-error "No such identifier in the scope" name)))
 
 (define (print-lua-env e)
-  (hash-for-each (lambda (k v) (format #t "~a => ~a~%" k v)) (lua-env-symbol-table e))
-  (and (not (is-top-level? e))
-       (print-lua-env (lua-env-upper-frame e))))
+  (define (%print-lua-env ee)
+    (hash-for-each (lambda (k v) (format #t "~a => ~a~%" k v)) (lua-env-symbol-table ee))
+    (if (not (is-top-level? ee))
+        (%print-lua-env (lua-env-upper-frame ee))
+        (display "=========end=========\n\n")))
+  (display "\n\n=========ENV=========\n")
+  (%print-lua-env e))
