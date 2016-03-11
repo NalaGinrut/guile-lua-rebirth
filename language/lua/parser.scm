@@ -144,7 +144,7 @@
    (repeatition (for assignment) : `(for ,$2))
 
    (assignment (name assign range) : `(assign ,$1 ,$3)
-               (name-list in exp-list) : `(assign ,$1 ,$3))
+               (name-list in exp-list) : `(assign ,@$1 ,$3))
 
    (conds (cond-list) : $1
           (cond-list else block) : `(,@$1 else ,$3))
@@ -204,8 +204,8 @@
             (local bindings) : `(local ,$2)
             (bindings) : $1)
 
-   (bindings (name-list) : `(variable ,$1)
-             (name-list assign exp-list) : `(assign $1 ,$3)
+   (bindings (name-list) : `(variable ,@$1)
+             (name-list assign exp-list) : `(assign ,@$1 ,$3)
              (function name func-body) : `(func-def ,$2 ,@$3))
 
    (func-name (dotted-name) : $1
