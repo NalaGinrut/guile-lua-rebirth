@@ -86,6 +86,23 @@
       `(let ,(list (car name-list)) ,(map newsym name-list) ,(list (car val-list))
             (->let* (cdr name-list) (cdr var-list) body))))
 
+(define (gen-let-syntax ast e)
+  (define (wrap-let node symtab)
+    (call-with-values
+        (lambda ()
+          (unzip3
+           (hash-map->list
+            (lambda (k v) (list k (car (assoc-ref v 'rename)) (car (assoc-ref v 'value))))
+            symtab)))
+      (lambda (vars renames vals)
+        `(let ,vars ,renames ,vals ,node))))
+  (display "gen-let-syntax enter!\n")
+  (match ast
+    (('scope rest)
+     (display "Wrapping...\n")
+     (wrap-let (gen-let-syntax rest (lua-env-upper-frame e)) (lua-env-symbol-table e)))
+    (else (display "gen-let-syntax: nothing\n") ast)))
+
 (define *toplevel-ops* '())
 
 (define (is-toplevel-op? o)
@@ -176,7 +193,7 @@
     ((_ e (arg arg* ...) body ...) ; common lambda
      (let ((renames (filter-map (lambda (s)
                                   (match s
-                                    ('(void) #f)
+                                    ('void #f)
                                     ((? symbol? id)
                                      (let ((ss (newsym id))
                                            (ssv (lua-static-scope-ref e id)))
@@ -192,7 +209,7 @@
     ((_ e (arg arg* ... . args) body ...) ; optional-args lambda
      (let ((renames (filter-map (lambda (s)
                                   (match s
-                                    ('(void) #f)
+                                    ('void #f)
                                     ((? symbol? id)
                                      (let ((ss (newsym id)))
                                        (lua-static-scope-set! e id `(rename ,ss))
@@ -219,10 +236,11 @@
 (define (comp src e)
   (define (%rename x)
     (let ((ssv (get-val-from-scope x e)))
-      (or (assoc-ref ssv 'rename)
+      (or (and=> (assoc-ref ssv 'rename) car)
           (error %rename "%rename: Invalid pattern!" ssv))))
+  (display "----------------------[Enter]-------------------------\n")
   (display src)(newline)
-  (format #t "ENV:~%") (print-lua-env e)
+  (print-lua-env e)
   (match src
     ;; Literals
     ('(marker nil)
@@ -257,12 +275,18 @@
      (let ((symid (string->symbol id)))
        `(lexical ,symid ,(%rename symid))))
     (`(local (assign (id ,id) ,v)) ; local assignment
-     (let ((vv (comp v e))
-           (rid (%rename (string->symbol id)))
-           (symid (string->symbol id)))
-       (when (not (lua-static-scope-ref e symid))
+     ;; TODO: should use `let' for local binding
+     (let* ((vv (comp v e))
+            (rid (gensym id))
+            (symid (string->symbol id))
+            (lst (lua-static-scope-ref e symid)))
+       (when (not lst)
+             (format #t "Add var `~a' to ENV~%" symid)
              (lua-static-scope-set! e symid `((rename ,rid) (value ,vv))))
-       `(set! (lexical ,id ,rid) ,vv)))
+       ;;`(set! (lexical ,symid ,rid) ,vv)))
+       ;; NOTE: Instead emit lexical assignment, we just use let for binding,
+       ;;       or there'll be redundant assigment
+       '(void)))
     (`(id ,id)
      ;; NOTE: here we will exploit
      (let ((symid (string->symbol id)))
@@ -274,8 +298,12 @@
     ;; scope and statment
     ;; FIXME: we need lexical scope
     (('scope rest)
+     (format #t "now: ~a~%" src)
      ;;(display rest)(newline)
-     (comp rest (new-scope e)))
+     (let ((new-env (new-scope e)))
+       (let ((se (gen-let-syntax `(scope ,(comp rest new-env)) new-env)))
+         (format #t "MMR: ~a~%" se)
+         se)))
     (('begin form)
      (comp form e))
     (('begin forms ...)
@@ -328,17 +356,22 @@
      (lua-lt (comp x e) (comp y e)))
 
     ;; functions
-    (`(func-call (id ,func) (args ,args))
+    (('func-call ('id func) ('args args ...))
      (format #t "func-call: ~a~%" args)
      (cond
       ((is-lua-builtin-func? func)
-       => (lambda (f) (f (comp args e))))
+       => (lambda (f)
+            (if (null? args)
+                (f)
+                (f (comp (car args) e)))))
       (else
        (->call (string->symbol func)
                ->toplevel-op
-               (if (multi-exps? args)
-                   (comp args e)
-                   (list (comp args e)))))))
+               (if (null? args)
+                   args
+                   (if (multi-exps? args)
+                       (comp args e)
+                       (list (comp args e))))))))
     (('func-def `(id ,func) ('params p ...) body)
      (format #t "func-def: ~a~%" p)
      `(define
