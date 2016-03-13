@@ -124,7 +124,7 @@
    (stat ;; A block can be explicitly delimited to produce a single statement:
          (loop-stmt do-block) 
          : (match $1
-             ('() $2)
+             (() $2)
              (('rep r) `(rep (scope ,r ,$2)))
              (else `(while ,$1 do ,$2)))
          (repeat ublock) : `(repeat ,$2)
@@ -173,7 +173,7 @@
              ;;    then all values returned by that call enter the list
              ;;    of values, before the adjustment
              ;;    (except when the call is enclosed in parentheses).
-             (var-list comma var) : `(mul-vals ,$1 ,$3))
+             (var-list comma var) : `(multi-exps ,$1 ,$3))
 
    ;; Multi values returning
    (exp-list (exp) : $1
@@ -181,9 +181,6 @@
 
    (multi-exps (exp comma exp) : (list $1 $3)
                (exp comma multi-exps) : `(,$1 ,@$3))
-
-   (exp-list-rest () : '()
-                  (exp) : $1)
 
    (range (exp comma exp range-rest)
           : (if (null? $4) 
@@ -200,7 +197,7 @@
    (return-stat (terminator) : '(return)
                 (exp-list terminator) : `(return ,$1))
 
-   (binding () : '()
+   (binding ;;() : '()
             (local bindings) : `(local ,$2)
             (bindings) : $1)
 
