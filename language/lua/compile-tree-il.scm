@@ -28,15 +28,25 @@
 (define (lua-init)
   #t) ; nothing to do yet.
 
+(define (predefine-all-toplevels e)
+  (hash-map->list (lambda (k v)
+                    (format #t "PRE: ~a~%" v)
+                    `(define ,k ,(and=> (assoc-ref v 'value) car)))
+                  (lua-env-symbol-table e)))
+
 (define (compile-tree-il exp env opts)
   (values
    (parse-tree-il
     (begin (lua-init)
-           (let ((xxx (comp (lua-optimize exp env)
-                            (current-top-level-environment))))
+           (let* ((xxx (comp (lua-optimize exp env)
+                            (current-top-level-environment)))
+                  (tree-il `(begin
+                              ,@(predefine-all-toplevels (current-top-level-environment))
+                              ,xxx)))
              (format #t "Tree-IL: ~%")
-             (pretty-print xxx)
-             xxx)))
+             (pretty-print tree-il)
+             tree-il)))
+
    env
    env))
 
@@ -197,7 +207,9 @@
                                     ((? symbol? id)
                                      (let ((ss (newsym id))
                                            (ssv (lua-static-scope-ref e id)))
-                                       (lua-static-scope-set! e id (cons `(rename ,ss) (if ssv ssv '())))
+                                       (format #t "->lambda[1]: Add `~a' to ENV~%" ss)
+                                       (when (not (assoc-ref ssv 'rename))
+                                             (lua-static-scope-set! e id (cons `(rename ,ss) (if ssv ssv '()))))
                                        ss))
                                     (else (error "->lambda: [1] Invalid id pattern!" s))))
                                 arg arg* ...)))
@@ -211,8 +223,11 @@
                                   (match s
                                     ('void #f)
                                     ((? symbol? id)
-                                     (let ((ss (newsym id)))
-                                       (lua-static-scope-set! e id `(rename ,ss))
+                                     (let ((ss (newsym id))
+                                           (ssv (lua-static-scope-ref e id)))
+                                       (format #t "->lambda[2]: Add `~a' to ENV~%" ss)
+                                       (when (not (assoc-ref ssv 'rename))
+                                             (lua-static-scope-set! e id (cons `(rename ,ss) (if ssv ssv '()))))
                                        ss))
                                     (else (error "->lambda: [2] Invalid id pattern!" s))))
                                 arg arg* ... args)))
@@ -264,46 +279,73 @@
       ((lua-global-ref id)
        `(toplevel ,(string->symbol id)))
       (else '(const nil))))
-    (`(assign (id ,id) ,v) ; global assignment
-     (let ((symid (string->symbol id))
-           (vv (comp v e)))
-       (when (not (lua-global-ref symid)) (lua-global-set! symid vv))
+    ;; (`(assign (id ,id) ,v) ; global assignment
+    ;;  (let ((symid (string->symbol id))
+    ;;        (vv (comp v e)))
+    ;;    (when (not (lua-global-ref symid))
+    ;;          (format #t "assign: Add var `~a' to ENV~%" symid)
+    ;;          (lua-global-set! symid vv))
+    ;;    `(begin
+    ;;       (define ,symid ,vv)
+    ;;       (set! (toplevel ,symid) ,vv))))
+    ;; (`(local (variable (id ,id))) ; local ref
+    ;;  (let ((symid (string->symbol id)))
+    ;;    `(lexical ,symid ,(%rename symid))))
+    (`(assign ,_vars ,_vals)
+     (let ((vars (comp _vars e))
+           (vals (comp _vals e)))
+       (for-each (lambda (k v) (lua-global-set! k v)) vars vals)
        `(begin
-          (define ,symid ,vv)
-          (set! (toplevel ,symid) ,vv))))
-    (`(local (variable (id ,id))) ; local ref
-     (let ((symid (string->symbol id)))
-       `(lexical ,symid ,(%rename symid))))
-    (`(local (assign (id ,id) ,v)) ; local assignment
-     ;; TODO: should use `let' for local binding
-     (let* ((vv (comp v e))
-            (rid (gensym id))
-            (symid (string->symbol id))
-            (lst (lua-static-scope-ref e symid)))
-       (when (not lst)
-             (format #t "Add var `~a' to ENV~%" symid)
-             (lua-static-scope-set! e symid `((rename ,rid) (value ,vv))))
-       ;;`(set! (lexical ,symid ,rid) ,vv)))
-       ;; NOTE: Instead emit lexical assignment, we just use let for binding,
-       ;;       or there'll be redundant assigment
+          ,@(map (lambda (k v) `(set! ,k ,v)) vars vals))))
+    ;; (`(local (assign (id ,id) ,v)) ; local assignment
+    ;;  ;; TODO: should use `let' for local binding
+    ;;  (let* ((vv (comp v e))
+    ;;         (rid (gensym id))
+    ;;         (symid (string->symbol id))
+    ;;         (lst (lua-static-scope-ref e symid)))
+    ;;    (when (not lst)
+    ;;          (format #t "local assign: Add var `~a' to ENV~%" symid)
+    ;;          (lua-static-scope-set! e symid `((rename ,rid) (value ,vv))))
+    ;;    ;;`(set! (lexical ,symid ,rid) ,vv)))
+    ;;    ;; NOTE: Instead emit lexical assignment, we just use let for binding,
+    ;;    ;;       or there'll be redundant assigment
+    ;;    '(void)))
+    (`(local (assign ,_vars ,_vals))
+     (let ((vars (comp _vars e))
+           (vals (comp _vals e)))
+       (for-each (lambda (k v)
+                   (let ((lst (lua-static-scope-ref e k))
+                         (rid (newsym k)))
+                     (when (not lst)
+                           (format #t "local assign: Add var `~a' to ENV~%" k)
+                           (lua-static-scope-set! e k `((rename ,rid) (value ,v))))))
+                 vars vals)
        '(void)))
     (`(id ,id)
      ;; NOTE: here we will exploit
      (let ((symid (string->symbol id)))
        (cond
-        ((lua-global-ref symid)
-         `(toplevel ,symid))
-        (else `(lexical ,symid ,(%rename symid))))))
+        ((and (not (lua-global-ref symid)) (lua-static-scope-ref e symid))
+         `(lexical ,symid ,(%rename symid)))
+        (else
+         (cond
+          ((lua-global-ref symid)
+           (format #t "exist global var: `~a'~%" symid)
+           `(toplevel ,symid))
+          (else
+           (lua-global-set! symid '((value (const nil))))
+           (format #t "non-exist global var: `~a'~%" symid)
+           '(const nil)))))))
 
     ;; scope and statment
-    ;; FIXME: we need lexical scope
     (('scope rest)
-     (format #t "now: ~a~%" src)
-     ;;(display rest)(newline)
-     (let ((new-env (new-scope e)))
-       (let ((se (gen-let-syntax `(scope ,(comp rest new-env)) new-env)))
-         (format #t "MMR: ~a~%" se)
-         se)))
+     (cond
+      ((eq? (car rest) 'func-def)
+       ;; NOTE: Don't produce `let' instruction just outside the function definition.
+       (comp rest (new-scope e)))
+      (else
+       (let ((new-env (new-scope e)))
+         (gen-let-syntax `(scope ,(comp rest new-env)) new-env)))))
     (('begin form)
      (comp form e))
     (('begin forms ...)
@@ -369,9 +411,10 @@
                ->toplevel-op
                (if (null? args)
                    args
-                   (if (multi-exps? args)
-                       (comp args e)
-                       (list (comp args e))))))))
+                   (let ((x (car args)))
+                     (if (multi-exps? x)
+                         (comp x e)
+                         (list (comp x e)))))))))
     (('func-def `(id ,func) ('params p ...) body)
      (format #t "func-def: ~a~%" p)
      `(define
