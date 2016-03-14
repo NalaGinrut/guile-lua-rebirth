@@ -17,10 +17,12 @@
   #:use-module (system base language)
   #:use-module (language lua parser)
   #:use-module (language lua compile-tree-il)
+  #:use-module (language scheme decompile-tree-il)
   #:export (lua))
 
 (define-language lua
   #:title "Lua"
   #:reader (lambda (port _) (read-lua port))
   #:compilers `((tree-il . ,compile-tree-il))
+  #:decompilers `((tree-il . ,decompile-tree-il))
   #:printer write)
