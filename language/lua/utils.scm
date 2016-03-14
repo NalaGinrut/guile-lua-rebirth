@@ -64,7 +64,8 @@
             ->list
             newsym
             compile-string
-            fix-for-cross))
+            fix-for-cross
+            fix-if-multi))
 
 (define (location x)
   (and (pair? x)
@@ -212,3 +213,8 @@
   (match o
     (('const v) v)
     (else o)))
+
+(define (fix-if-multi vs x)
+  (match vs
+    (('multi-exps rest ...) x)
+    (else (list x))))
