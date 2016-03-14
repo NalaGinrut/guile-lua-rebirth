@@ -202,7 +202,7 @@
             (bindings) : $1)
 
    (bindings (name-list) : `(variable ,@$1)
-             (name-list assign exp-list) : `(assign ,@$1 ,$3)
+             (name-list assign exp-list) : `(assign ,$1 ,$3)
              (function name func-body) : `(func-def ,$2 ,@$3))
 
    (func-name (dotted-name) : $1
@@ -282,7 +282,7 @@
                (name-list comma tri-dots) : `(,@$1 ,$3))
 
    (name-list (name) : (list $1)
-              (name-list comma name) : `(,@$1 ,$3))
+              (name-list comma name) : `(multi-exps ,@$1 ,$3))
 
    (table-constructor (lbrace rbrace) : '(table)
                       (lbrace field-list rbrace) : `(table ,@$2)
