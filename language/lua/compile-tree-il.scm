@@ -28,25 +28,30 @@
 (define (lua-init)
   #t) ; nothing to do yet.
 
+;; NOTE: For Guile-Lua-rebirth, we combine Lua and Scheme environment as possible,
+;;       then you may define a var in Scheme, but reference it in Lua.
 (define (predefine-all-toplevels e)
-  (hash-map->list (lambda (k v)
-                    (format #t "PRE: ~a~%" v)
-                    `(define ,k ,(and=> (assoc-ref v 'value) car)))
-                  (lua-env-symbol-table e)))
+  (filter-map
+   identity
+   (hash-map->list (lambda (k v)
+                     (format #t "PRE: ~a~%" v)
+                     (and (not (defined? k))
+                          `(define ,k ,(and=> (assoc-ref v 'value) car))))
+                   (lua-env-symbol-table e))))
 
 (define (compile-tree-il exp env opts)
   (values
    (parse-tree-il
-    (begin (lua-init)
-           (let* ((xxx (comp (lua-optimize exp env)
-                            (current-top-level-environment)))
-                  (tree-il `(begin
-                              ,@(predefine-all-toplevels (current-top-level-environment))
-                              ,xxx)))
-             (format #t "Tree-IL: ~%")
-             (pretty-print tree-il)
-             tree-il)))
-
+    (begin
+      (lua-init)
+      (let* ((xxx (comp (lua-optimize exp env)
+                        (current-top-level-environment)))
+             (tree-il `(begin
+                         ,@(predefine-all-toplevels (current-top-level-environment))
+                         ,xxx)))
+        (format #t "Tree-IL: ~%")
+        (pretty-print tree-il)
+        tree-il)))
    env
    env))
 
@@ -248,7 +253,7 @@
 ;; for emacs:
 ;; (put 'match 'scheme-indent-function 1)
 
-(define (comp src e)
+(define* (comp src e #:key (local-assign? #f))
   (define (%rename x)
     (let ((ssv (get-val-from-scope x e)))
       (or (and=> (assoc-ref ssv 'rename) car)
@@ -271,7 +276,7 @@
 
     (('multi-exps exps ...)
      (format #t "EEE: ~a~%" exps)
-     (map (lambda (exp) (comp exp e)) exps))
+     (map (lambda (exp) (comp exp e #:local-assign? local-assign?)) exps))
 
     ;; ref and assignment
     (`(variable (id ,id)) ; global ref
@@ -294,7 +299,8 @@
     (`(assign ,_vars ,_vals)
      (let ((vars (comp _vars e))
            (vals (comp _vals e)))
-       (for-each (lambda (k v) (lua-global-set! k v)) vars vals)
+       (format #t "VVV: ~a, ~a~%" vars vals)
+       (for-each (lambda (k v) (lua-global-set! (cadr k) `((value ,v)))) vars vals)
        `(begin
           ,@(map (lambda (k v) `(set! ,k ,v)) vars vals))))
     ;; (`(local (assign (id ,id) ,v)) ; local assignment
@@ -311,8 +317,9 @@
     ;;    ;;       or there'll be redundant assigment
     ;;    '(void)))
     (`(local (assign ,_vars ,_vals))
-     (let ((vars (comp _vars e))
-           (vals (comp _vals e)))
+     (let ((vars (fix-if-multi _vars (comp _vars e #:local-assign? #t)))
+           (vals (fix-if-multi _vals (comp _vals e))))
+       (format #t "LLL: ~a, ~a~%" vars vals)
        (for-each (lambda (k v)
                    (let ((lst (lua-static-scope-ref e k))
                          (rid (newsym k)))
@@ -325,17 +332,16 @@
      ;; NOTE: here we will exploit
      (let ((symid (string->symbol id)))
        (cond
+        (local-assign? (format #t "local assign: ~a~%" id) symid)
         ((and (not (lua-global-ref symid)) (lua-static-scope-ref e symid))
          `(lexical ,symid ,(%rename symid)))
+        ((lua-global-ref symid)
+         (format #t "exist global var: `~a'~%" symid)
+         `(toplevel ,symid))
         (else
-         (cond
-          ((lua-global-ref symid)
-           (format #t "exist global var: `~a'~%" symid)
-           `(toplevel ,symid))
-          (else
-           (lua-global-set! symid '((value (const nil))))
-           (format #t "non-exist global var: `~a'~%" symid)
-           '(const nil)))))))
+         (lua-global-set! symid '((value (const nil))))
+         (format #t "non-exist global var: `~a'~%" symid)
+         `(toplevel ,symid)))))
 
     ;; scope and statment
     (('scope rest)
