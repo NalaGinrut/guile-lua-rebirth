@@ -111,12 +111,10 @@
             symtab)))
       (lambda (vars renames vals)
         `(let ,vars ,renames ,vals ,node))))
-  (display "gen-let-syntax enter!\n")
   (match ast
     (('scope rest)
-     (display "Wrapping...\n")
      (wrap-let (gen-let-syntax rest (lua-env-upper-frame e)) (lua-env-symbol-table e)))
-    (else (display "gen-let-syntax: nothing\n") ast)))
+    (else ast)))
 
 (define *toplevel-ops* '())
 
@@ -161,7 +159,6 @@
 (define (->var var) (->scope var is-toplevel-var?))
 
 (define (->call f trans args)
-  (format #t "->call: ~a~%" args)
   (cond
    ((null? args) `(call ,(trans f)))
    (else `(call ,(trans f) ,@args))))
@@ -243,7 +240,6 @@
            (((,@arg ,@arg* ...) #f args #f () ,renames) ,(comp body ... e)))))))))
 
 (define (->return vals)
-  (format #t "RRR: ~a~%" vals)
   (match vals
     (() '(const nil))
     (((x1 ...) (x2 ...) rest ...)
@@ -253,7 +249,7 @@
 ;; for emacs:
 ;; (put 'match 'scheme-indent-function 1)
 
-(define* (comp src e #:key (local-assign? #f))
+(define* (comp src e #:key (local-bind? #f))
   (define (%rename x)
     (let ((ssv (get-val-from-scope x e)))
       (or (and=> (assoc-ref ssv 'rename) car)
@@ -276,14 +272,12 @@
 
     (('multi-exps exps ...)
      (format #t "EEE: ~a~%" exps)
-     (map (lambda (exp) (comp exp e #:local-assign? local-assign?)) exps))
+     (map (lambda (exp) (comp exp e #:local-bind? local-bind?)) exps))
 
     ;; ref and assignment
-    (`(variable (id ,id)) ; global ref
-     (cond
-      ((lua-global-ref id)
-       `(toplevel ,(string->symbol id)))
-      (else '(const nil))))
+    (`(variable ,_vars) ; global ref
+     (let ((vars (fix-if-multi _vars (comp _vars e))))
+       vars))
     ;; (`(assign (id ,id) ,v) ; global assignment
     ;;  (let ((symid (string->symbol id))
     ;;        (vv (comp v e)))
@@ -293,31 +287,30 @@
     ;;    `(begin
     ;;       (define ,symid ,vv)
     ;;       (set! (toplevel ,symid) ,vv))))
-    ;; (`(local (variable (id ,id))) ; local ref
-    ;;  (let ((symid (string->symbol id)))
-    ;;    `(lexical ,symid ,(%rename symid))))
+    (`(local (variable ,_vars)) ; local ref
+     (let ((vars (fix-if-multi _vars (comp _vars e #:local-bind? #t))))
+       (format #t "LOC: ~a~%" vars)
+       (for-each (lambda (v)
+                   (lua-static-scope-set! e v `((rename ,(newsym v)) (value (const nil)))))
+                 vars)
+       '(void)))
     (`(assign ,_vars ,_vals)
-     (let ((vars (comp _vars e))
-           (vals (comp _vals e)))
+     (let ((vars (fix-if-multi _vars (comp _vars e)))
+           (vals (fix-if-multi _vals (comp _vals e))))
        (format #t "VVV: ~a, ~a~%" vars vals)
-       (for-each (lambda (k v) (lua-global-set! (cadr k) `((value ,v)))) vars vals)
        `(begin
-          ,@(map (lambda (k v) `(set! ,k ,v)) vars vals))))
-    ;; (`(local (assign (id ,id) ,v)) ; local assignment
-    ;;  ;; TODO: should use `let' for local binding
-    ;;  (let* ((vv (comp v e))
-    ;;         (rid (gensym id))
-    ;;         (symid (string->symbol id))
-    ;;         (lst (lua-static-scope-ref e symid)))
-    ;;    (when (not lst)
-    ;;          (format #t "local assign: Add var `~a' to ENV~%" symid)
-    ;;          (lua-static-scope-set! e symid `((rename ,rid) (value ,vv))))
-    ;;    ;;`(set! (lexical ,symid ,rid) ,vv)))
-    ;;    ;; NOTE: Instead emit lexical assignment, we just use let for binding,
-    ;;    ;;       or there'll be redundant assigment
-    ;;    '(void)))
+          ,@(map (lambda (k v)
+                   (match k
+                     (format #t "NAME: ~a~%" k)
+                     (`(toplevel ,name)
+                      (lua-global-set! name `((value ,v))))
+                     (`(lexical ,name ,rename)
+                      (lua-static-scope-set! e name `((rename ,rename) (value ,v))))
+                     (else (error `(assign ,_vars ,_vals) "name match failed!" k)))
+                   `(set! ,k ,v))
+                 vars vals))))
     (`(local (assign ,_vars ,_vals))
-     (let ((vars (fix-if-multi _vars (comp _vars e #:local-assign? #t)))
+     (let ((vars (fix-if-multi _vars (comp _vars e #:local-bind? #t)))
            (vals (fix-if-multi _vals (comp _vals e))))
        (format #t "LLL: ~a, ~a~%" vars vals)
        (for-each (lambda (k v)
@@ -327,12 +320,14 @@
                            (format #t "local assign: Add var `~a' to ENV~%" k)
                            (lua-static-scope-set! e k `((rename ,rid) (value ,v))))))
                  vars vals)
+       ;; NOTE: Instead emit lexical assignment, we just use let for binding,
+       ;;       or there'll be redundant assigment
        '(void)))
     (`(id ,id)
      ;; NOTE: here we will exploit
      (let ((symid (string->symbol id)))
        (cond
-        (local-assign? (format #t "local assign: ~a~%" id) symid)
+        (local-bind? (format #t "local binding: ~a~%" id) symid)
         ((and (not (lua-global-ref symid)) (lua-static-scope-ref e symid))
          `(lexical ,symid ,(%rename symid)))
         ((lua-global-ref symid)
