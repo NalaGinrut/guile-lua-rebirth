@@ -76,7 +76,8 @@
 
    ;; The unit of compilation of Lua is called a chunk.
    ;; Syntactically, a chunk is simply a block:
-   (chunk (block) : $1)
+   (chunk (block) : $1
+          (*eoi*) : *eof-object*)
 
    (terminator () : '()
                (semi-colon) : '())
@@ -92,7 +93,7 @@
              ((null? $1) 
               (if (null? $2)
                   (if (null? $3)
-                      `(scope) ; FIXME: is it proper?
+                      '(scope) ; FIXME: is it proper?
                       `(scope ,$3))
                   (if (null? $3)
                       `(scope ,$2)
@@ -101,12 +102,12 @@
               (if (null? $3)
                   `(scope ,$1)
                   `(scope (begin ,$1 ,$3))))
-             (else `(scope (begin ,$1 ,$2 ,@$3)))))
-   
+             (else `(scope (begin ,$1 ,$2 ,$3)))))
+
    (ublock (block until exp) : `(do ,$3 until ,$1))
 
    (scope () : '()
-          (scope stat-list binding)
+          (scope stat-list binding terminator)
           : (if (null? $1)
                 (if (null? $2)
                     $3
@@ -173,14 +174,17 @@
              ;;    then all values returned by that call enter the list
              ;;    of values, before the adjustment
              ;;    (except when the call is enclosed in parentheses).
-             (var-list comma var) : `(multi-exps ,$1 ,$3))
+             (vars-list) : `(multi-exps ,@$1))
+
+   (vars-list (var comma var) : (list $1 $3)
+              (vars-list comma var) : `(,$1 ,@$3))
 
    ;; Multi values returning
    (exp-list (exp) : $1
              (multi-exps) : `(multi-exps ,@$1))
 
    (multi-exps (exp comma exp) : (list $1 $3)
-               (exp comma multi-exps) : `(,$1 ,@$3))
+               (multi-exps comma exp) : `(,$1 ,@$3))
 
    (range (exp comma exp range-rest)
           : (if (null? $4) 
@@ -201,7 +205,7 @@
             (local bindings) : `(local ,$2)
             (bindings) : $1)
 
-   (bindings (name-list) : `(variable ,@$1)
+   (bindings (name-list) : `(variable ,$1)
              (name-list assign exp-list) : `(assign ,$1 ,$3)
              (function name func-body) : `(func-def ,$2 ,@$3))
 
@@ -278,11 +282,12 @@
              (name-lists) : $1
              (tri-dots) : '(tri-dots))
 
-   (name-lists (name-list) : $1
-               (name-list comma tri-dots) : `(,@$1 ,$3))
+   (name-list (name) : $1
+              (name-lists) : `(multi-exps ,@$1))
 
-   (name-list (name) : (list $1)
-              (name-list comma name) : `(multi-exps ,@$1 ,$3))
+   (name-lists (name comma name) : (list $1 $3)
+               (name-lists comma name) : `(,$1 ,@$3)
+               (name-list comma tri-dots) : `(,@$1 ,$3))
 
    (table-constructor (lbrace rbrace) : '(table)
                       (lbrace field-list rbrace) : `(table ,@$2)
