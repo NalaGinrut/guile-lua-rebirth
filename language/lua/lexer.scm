@@ -104,7 +104,8 @@
       (check-delimiter c)))
 
 (define (is-whitespace? c)
-  (and (char? c) (char-set-contains? char-set:whitespace c)))
+  (and (char? c) (not (char=? c #\nl))
+       (char-set-contains? char-set:whitespace c)))
 
 (define (read-word port)
   (read-delimited *delimiters* port 'peek))
@@ -322,7 +323,10 @@
     (cond
      ((eof-object? c)
       (set! last-token 'none)
-      '*eoi*)
+      (return port '*eoi* #f))
+     ((char=? c #\nl)
+      (read-char port)
+      (return port 'newline #f))
      ((is-whitespace? c)
       (read-char port)
       ;; NOTE: don't memorize whitespace to last-token!!!
@@ -391,50 +395,63 @@
   (let ((next (make-lua-tokenizer port)))
     (let lp ((out '()))
       (let ((tok (next)))
-        (if (eq? tok '*eoi*)
+        (if (eq? (lexical-token-category tok) '*eoi*)
             (reverse! out)
             (lp (cons tok out)))))))
 
 (define (make-lua-tokenizer port)
-  (define (check top tok)
+  (define (check-parens top tok)
     (eq? (lexical-token-category top)
          (case (lexical-token-category tok)
            ((rparen) 'lparen)
            ((rbracket) 'lbracket)
            ((rbrace) 'lbrace)
-           (else (error check "wrong tok" tok)))))
-  (let ((eoi? #f)
-        (stack (new-stack)))
-    (lambda ()
-      (if eoi?
-          '*eoi*
-          (let ((tok (next-token port)))
-            (case (if (lexical-token? tok) (lexical-token-category tok) tok)
-              ((lparen lbracket lbrace)
-               (stack-push! stack tok)) ; ready to check
-              ((rparen rbracket rbrace) ; fit
-               (if (and (not (stack-empty? stack))
-                        (check (stack-top stack) tok))
-                   (stack-pop! stack)
-                   (lex-error "unexpected close"
-                              (lexical-token-source tok)
-                              #f)))
-              ;; NOTE: this checker promised the last semi-colon before eof will 
-              ;;       return '*eoi* directly, or we have to press EOF (C-d) to 
-              ;;       end the input.
-              ;;       BUT I WONDER IF THERE'S A BETTER WAY FOR THIS!
-              ((semi-colon *eoi*)
-               ;; (format #t "hit: ~a,~a~%" tok (stack-empty? stack))
-               ;; FIXME:
-               ;; It's unnecessary for Lua to get semi-colon as chunk-ending.
-               ;; The name of game is "how to detect chunk-ending".
-               ;; The original Lua REPL will check each token to complete a chunk.
-               ;; An explict way is to pass each token to the parser and catch the
-               ;; exception.
-               ;; It's better to split parser into repl-parser and compile-parser.
-               ;; Or detect if it's in a REPL. (take advantage of *repl-stack* ?)
-               (set! eoi? (stack-empty? stack))))
-            tok)))))
+           (else (lex-error "wrong parens tok"
+                            (lexical-token-source tok)
+                            #f)))))
+  (define (check-block top tok)
+    (eq? (lexical-token-category tok)
+         (case (lexical-token-category top)
+           ((function do if for) 'end)
+           (else (lex-error "wrong block tok"
+                            (lexical-token-source top)
+                            #f)))))
+  (define eoi? #f)
+  (define pstack (new-stack))  ; parens stack
+  (define bstack (new-stack)) ; block stack
+  (define (bump)
+    (if eoi?
+        '*eoi*
+        (let ((tok (next-token port)))
+          ;;(format #t "LLL: ~a~%" (lexical-token-category tok))
+          (case (lexical-token-category tok)
+            ((lparen lbracket lbrace)
+             (stack-push! pstack tok)) ; ready to check parens
+            ((rparen rbracket rbrace) ; fit
+             (if (and (not (stack-empty? pstack))
+                      (check-parens (stack-top pstack) tok))
+                 (stack-pop! pstack)
+                 (lex-error "unexpected close"
+                            (lexical-token-source tok)
+                            #f)))
+            ((function do if for)
+             (stack-push! bstack tok)) ; ready to check block
+            ((end)
+             (if (and (not (stack-empty? bstack))
+                      (check-block (stack-top bstack) tok))
+                 (stack-pop! bstack)
+                 (lex-error "unexpected block end"
+                            (lexical-token-source tok)
+                            #f)))
+            ((newline)
+             (when (in-repl?)
+                   (set! eoi? (and (stack-empty? bstack) (stack-empty? pstack)))))
+            ((*eoi*)
+             (set! eoi? (and (stack-empty? bstack) (stack-empty? pstack)))))
+          (if (eq? 'newline (lexical-token-category tok))
+              (bump) ; skip newline
+              tok))))
+  bump)
 
 (define (debug-lua-tokenizer src)
   ((make-token-checker test-lua-tokenizer) src))
