@@ -201,8 +201,7 @@
    (return-stat (terminator) : '(return)
                 (exp-list terminator) : `(return ,$1))
 
-   (binding ;;() : '()
-            (local bindings) : `(local ,$2)
+   (binding (local bindings) : `(local ,$2)
             (bindings) : $1)
 
    (bindings (name-list) : `(variable ,$1)
@@ -279,10 +278,10 @@
    (params (lparen par-list rparen) : `(params ,@$2))
 
    (par-list () : '((void))
-             (name-lists) : $1
+             (name-list) : $1
              (tri-dots) : '(tri-dots))
 
-   (name-list (name) : $1
+   (name-list (name) : (list $1)
               (name-lists) : `(multi-exps ,@$1))
 
    (name-lists (name comma name) : (list $1 $3)
