@@ -262,9 +262,9 @@
     ('(marker nil)
      '(const nil))
     ('(boolean true)
-     '(const true))
+     '(const #t))
     ('(boolean false)
-     '(const false))
+     '(const #f))
     (`(number ,x)
      `(const ,x))
     (`(string ,x)
@@ -297,11 +297,9 @@
     (`(assign ,_vars ,_vals)
      (let ((vars (fix-if-multi _vars (comp _vars e)))
            (vals (fix-if-multi _vals (comp _vals e))))
-       (format #t "VVV: ~a, ~a~%" vars vals)
        `(begin
           ,@(map (lambda (k v)
                    (match k
-                     (format #t "NAME: ~a~%" k)
                      (`(toplevel ,name)
                       (lua-global-set! name `((value ,v))))
                      (`(lexical ,name ,rename)
@@ -312,7 +310,6 @@
     (`(local (assign ,_vars ,_vals))
      (let ((vars (fix-if-multi _vars (comp _vars e #:local-bind? #t)))
            (vals (fix-if-multi _vals (comp _vals e))))
-       (format #t "LLL: ~a, ~a~%" vars vals)
        (for-each (lambda (k v)
                    (let ((lst (lua-static-scope-ref e k))
                          (rid (newsym k)))
@@ -397,6 +394,8 @@
      (lua-geq (comp x e) (comp y e)))
     (`(leq ,x ,y)
      (lua-lt (comp x e) (comp y e)))
+    (`(not ,x)
+     (lua-not (comp x e)))
 
     ;; functions
     (('func-call ('id func) ('args args ...))
