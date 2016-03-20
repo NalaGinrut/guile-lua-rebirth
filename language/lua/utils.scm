@@ -65,7 +65,8 @@
             newsym
             compile-string
             fix-for-cross
-            fix-if-multi))
+            fix-if-multi
+            in-repl?))
 
 (define (location x)
   (and (pair? x)
@@ -218,3 +219,6 @@
   (match vs
     (('multi-exps rest ...) x)
     (else (list x))))
+
+(define (in-repl?)
+  (not (null? (fluid-ref *repl-stack*))))
