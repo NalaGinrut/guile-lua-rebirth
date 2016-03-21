@@ -154,6 +154,8 @@
    ((pred id) `(toplevel ,id))
    (else `(lexical ,id ,(newsym id)))))
 
+(define (->lexical-op renmaed-op)
+  (lambda (op) `(lexical ,op ,renmaed-op)))
 (define (->toplevel-op op) `(toplevel ,op))
 (define (->op op) (->scope op is-toplevel-op?))
 (define (->var var) (->scope var is-toplevel-var?))
@@ -278,18 +280,8 @@
     (`(variable ,_vars) ; global ref
      (let ((vars (fix-if-multi _vars (comp _vars e))))
        vars))
-    ;; (`(assign (id ,id) ,v) ; global assignment
-    ;;  (let ((symid (string->symbol id))
-    ;;        (vv (comp v e)))
-    ;;    (when (not (lua-global-ref symid))
-    ;;          (format #t "assign: Add var `~a' to ENV~%" symid)
-    ;;          (lua-global-set! symid vv))
-    ;;    `(begin
-    ;;       (define ,symid ,vv)
-    ;;       (set! (toplevel ,symid) ,vv))))
     (`(local (variable ,_vars)) ; local ref
      (let ((vars (fix-if-multi _vars (comp _vars e #:local-bind? #t))))
-       (format #t "LOC: ~a~%" vars)
        (for-each (lambda (v)
                    (lua-static-scope-set! e v `((rename ,(newsym v)) (value (const nil)))))
                  vars)
@@ -314,7 +306,6 @@
                    (let ((lst (lua-static-scope-ref e k))
                          (rid (newsym k)))
                      (when (not lst)
-                           (format #t "local assign: Add var `~a' to ENV~%" k)
                            (lua-static-scope-set! e k `((rename ,rid) (value ,v))))))
                  vars vals)
        ;; NOTE: Instead emit lexical assignment, we just use let for binding,
@@ -324,15 +315,15 @@
      ;; NOTE: here we will exploit
      (let ((symid (string->symbol id)))
        (cond
-        (local-bind? (format #t "local binding: ~a~%" id) symid)
+        (local-bind? #;(format #t "local binding: ~a~%" id) symid)
         ((and (not (lua-global-ref symid)) (lua-static-scope-ref e symid))
          `(lexical ,symid ,(%rename symid)))
         ((lua-global-ref symid)
-         (format #t "exist global var: `~a'~%" symid)
+         ;;(format #t "exist global var: `~a'~%" symid)
          `(toplevel ,symid))
         (else
          (lua-global-set! symid '((value (const nil))))
-         (format #t "non-exist global var: `~a'~%" symid)
+         ;;(format #t "non-exist global var: `~a'~%" symid)
          `(toplevel ,symid)))))
 
     ;; scope and statment
@@ -369,6 +360,9 @@
              (comp b2 e)
              (->if-rest rest))))
 
+    ;; loop control
+    (`(rep ,what)
+     #t)
     ;; arithmatic op
     (`(add ,x ,y)
      (lua-add (comp x e) (comp y e)))
@@ -399,7 +393,7 @@
 
     ;; functions
     (('func-call ('id func) ('args args ...))
-     (format #t "func-call: ~a~%" args)
+     ;;(format #t "func-call: ~a~%" args)
      (cond
       ((is-lua-builtin-func? func)
        => (lambda (f)
@@ -407,16 +401,21 @@
                 (f)
                 (f (comp (car args) e)))))
       (else
-       (->call (string->symbol func)
-               ->toplevel-op
-               (if (null? args)
-                   args
-                   (let ((x (car args)))
-                     (if (multi-exps? x)
-                         (comp x e)
-                         (list (comp x e)))))))))
+       (let ((symfunc (string->symbol func)))
+         (->call symfunc
+                 (cond
+                  ((and (not (lua-global-ref symfunc))
+                        (lua-static-scope-ref e symfunc))
+                   (->lexical-op (%rename symfunc)))
+                  (else ->toplevel-op))
+                 (if (null? args)
+                     args
+                     (let ((x (car args)))
+                       (if (multi-exps? x)
+                           (comp x e)
+                           (list (comp x e))))))))))
     (('func-def `(id ,func) ('params p ...) body)
-     (format #t "func-def: ~a~%" p)
+     ;;(format #t "func-def: ~a~%" p)
      `(define
         ,(string->symbol func)
         (lambda ((name . ,(string->symbol func)))
@@ -426,11 +425,11 @@
         (lexical ,(string->symbol func))
         (lambda ((name . ,(string->symbol func)))
           ,(->lambda e ((extract-ids p)) body))))
-    (('anon-func-def body ...)
+    (('anon-func-def ('params p ...) body)
      ;; TODO: implement anonymous function
-     #t)
+     `(lambda () ,(->lambda e ((extract-ids p)) body)))
     (('return vals ...)
-     (format #t "return: ~a~%" vals)
+     ;;(format #t "return: ~a~%" vals)
      (->return (if (null? vals) vals (comp (car vals) e))))
 
     ;; TODO: finish the rest
