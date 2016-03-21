@@ -412,7 +412,7 @@
   (define (check-block top tok)
     (eq? (lexical-token-category tok)
          (case (lexical-token-category top)
-           ((function do if for) 'end)
+           ((function do if) 'end)
            (else (lex-error "wrong block tok"
                             (lexical-token-source top)
                             #f)))))
@@ -434,7 +434,7 @@
                  (lex-error "unexpected close"
                             (lexical-token-source tok)
                             #f)))
-            ((function do if for)
+            ((function do if)
              (stack-push! bstack tok)) ; ready to check block
             ((end)
              (if (and (not (stack-empty? bstack))
