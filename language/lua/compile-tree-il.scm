@@ -55,21 +55,6 @@
    env
    env))
 
-(define (lookup name env)
-  (hash-ref env name))
-
-(define (store name value env)
-  (hash-set! env name value))
-
-(define (let1 what proc)
-  (let ((sym (gensym))) 
-    (-> (let (list sym) (list sym) (list what) (proc sym)))))
-
-(define (begin1 what proc)
-  (let1 what (lambda (v)
-               (-> (begin (proc v)
-                          (-> (lexical v v)))))))
-
 (define (id-gensym x)
   (match x
     ('(void) #f)
@@ -81,7 +66,7 @@
 (define (->body body name-list rename-list env)
   ;; TODO: find out all the lexical bindings to be replaced with lexical syntax of tree-il.
   ;;       This may need recursive and calling `comp' function.
-  #t)
+  (comp body env))
 
 ;; <let>
 ;; GRAMMAR:
@@ -91,15 +76,35 @@
 ;; NOTE: only x321 and y123, say, rename-list matters, so keep them identical in the body,
 ;;       name-list seems useless here, dunno...
 (define (->let name-list val-list body env)
-  (let ((rename-list (map newsym name-list)))
-    `(let ,name-list ,rename-list ,val-list ,(->body body name-list rename-list env))))
+  (let ((rename-list (map newsym name-list))
+        (vl (map (lambda (x) (comp x env)) val-list)))
+    (for-each
+     (lambda (var rename val)
+       (lua-static-scope-set! env var `((rename ,rename) (value ,val))))
+     name-list rename-list vl)
+    `(let ,name-list ,rename-list ,vl ,(->body body name-list rename-list env))))
 
 ;; There's no let* in tree-il, so we have to handle it.
 (define (->let* name-list val-list body env)
   (if (null? name-list)
       `(let () () () ,body)
-      `(let ,(list (car name-list)) ,(map newsym name-list) ,(list (car val-list))
-            (->let* (cdr name-list) (cdr var-list) body))))
+      (let ((rename-list (map newsym name-list))
+            (vl (map (lambda (x) (comp x env)) val-list)))
+        (for-each
+         (lambda (var rename val)
+           (lua-static-scope-set! env var `((rename ,rename) (value ,val))))
+         name-list rename-list vl)
+        `(let ,(list (car name-list)) ,rename-list ,(list (car vl))
+              (->let* (cdr name-list) (cdr vl) body)))))
+
+(define (->letrec name-list val-list body env)
+  (let ((rename-list (map newsym name-list))
+        (vl (map (lambda (x) (comp x env)) val-list)))
+    (for-each
+     (lambda (var rename val)
+       (lua-static-scope-set! env var `((rename ,rename) (value ,val))))
+     name-list rename-list vl)
+    `(letrec ,name-list ,rename-list ,vl ,(->body body name-list rename-list env))))
 
 (define (gen-let-syntax ast e)
   (define (wrap-let node symtab)
@@ -199,11 +204,12 @@
 ;; NOTE: *Maybe* we don't need to support kargs (in Lua), hmm...dunno
 ;; NOTE: There's no actual lambda-case syntax in Lua, so `alternate' is useless.
 ;; TODO: use procedual Tree-IL to keep source information.
+;; NOTE: "body" shouldn't be applied "comp" within ->lambda, since we need to decide when to apply it in "comp".
 (define-syntax ->lambda
   (syntax-rules ()
     ((_ e () body ...) ; thunk
      `(lambda-case
-       ((() #f #f #f () ()) ,(comp body ... e))))
+       ((() #f #f #f () () body ...))))
     ((_ e (arg arg* ...) body ...) ; common lambda
      (let ((renames (filter-map (lambda (s)
                                   (match s
@@ -213,15 +219,15 @@
                                            (ssv (lua-static-scope-ref e id)))
                                        (format #t "->lambda[1]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
-                                             (lua-static-scope-set! e id (cons `(rename ,ss) (if ssv ssv '()))))
+                                             (lua-static-scope-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
                                     (else (error "->lambda: [1] Invalid id pattern!" s))))
-                                arg arg* ...)))
+                                `arg `arg* ...)))
        (cond
         ((null? renames) (->lambda e () body ...))
         (else
          `(lambda-case
-           (((,@arg ,@arg* ...) #f #f #f () ,renames) ,(comp body ... e)))))))
+           (((,@`arg ,@`arg* ...) #f #f #f () ,renames) body ...))))))
     ((_ e (arg arg* ... . args) body ...) ; optional-args lambda
      (let ((renames (filter-map (lambda (s)
                                   (match s
@@ -231,15 +237,15 @@
                                            (ssv (lua-static-scope-ref e id)))
                                        (format #t "->lambda[2]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
-                                             (lua-static-scope-set! e id (cons `(rename ,ss) (if ssv ssv '()))))
+                                             (lua-static-scope-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
                                     (else (error "->lambda: [2] Invalid id pattern!" s))))
-                                arg arg* ... args)))
+                                `(,@`arg ,@`arg* ... args))))
        (cond
         ((null? renames) (->lambda e () body ...))
         (else
          `(lambda-case
-           (((,@arg ,@arg* ...) #f args #f () ,renames) ,(comp body ... e)))))))))
+           (((,@`arg ,@`arg* ...) #f args #f () ,renames) body ...))))))))
 
 (define (->return vals)
   (match vals
@@ -340,29 +346,100 @@
     (('begin forms ...)
      `(begin ,@(map (lambda (x) (comp x e)) forms)))
     (('if cnd 'then b1)
-     (and (comp cnd e) (comp b1 e)))
+     `(if ,(comp cnd e) ,(comp b1 e) (void)))
     (('if cnd 'then b1 else b2)
-     (if (comp cnd e)
-         (comp b1 e)
-         (comp b2 e)))
+     `(if ,(comp cnd e)
+          ,(comp b1 e)
+          ,(comp b2 e)))
     (('if cnd 'then b1 'elseif c2 'then b2 . rest)
      (define (->if-rest x)
        (match x
          (() #t)
          (('elseif c 'then b . r)
-          (if (comp c e)
-              (comp b e)
-              (->if-rest r)))
+          `(if ,(comp c e)
+               ,(comp b e)
+               ,(->if-rest r)))
          (else error ->if-rest "BUG: Shouldn't be here!" x)))
-     (if (comp cnd e)
-         (comp b1 e)
-         (if (comp c2 e)
-             (comp b2 e)
-             (->if-rest rest))))
+     `(if ,(comp cnd e)
+          ,(comp b1 e)
+          (if ,(comp c2 e)
+              ,(comp b2 e)
+              ,(->if-rest rest))))
 
-    ;; loop control
-    (`(rep ,what)
-     #t)
+    ;; control
+    (('rep rest)
+     ;; repeat tagging, just for debug
+     (comp rest e))
+    (`(do-block ,body)
+     ;; NOTE: To implement loop-break, we setup two continuations:
+     ;; 1. "break-loop" continuation for jumping out of all mess
+     ;; 2. "continue-loop" continuation for jumping back to infinite loop
+     `(call (@@ (guile) call-with-prompt)
+            (lexical break-tag ,(get-rename e 'break-tag))
+            ,(->lambda
+              e ()
+              (->letrec (break-loop)
+                        ,(->lambda
+                          e ('name . break-loop)
+                          (call (@@ (guile) call-with-prompt)
+                                (lexical continue-tag ,(get-rename e 'continue-tag))
+                                ,(->lambda
+                                  e ()
+                                  (->letrec '(continue-loop)
+                                            ,(->lambda
+                                              e ('name . continue-loop)
+                                              ,(comp body e)) ; do the block
+                                            (call (lexical continue-loop ,(get-rename e 'continue-loop))) ; continue to loop
+                                            e)) ; end (->lambda (->letrec ... continue-loop
+                                ,(->lambda
+                                  e ((kc))
+                                  ;; NOTE: If this prompt handler were triggered, it meant "abort" happened somewhere in the continue-loop.
+                                  ;;       Then we should call break-loop for jumping out of continue-loop. This will abandon the current
+                                  ;;       loop and setup a new loop with the current context.
+                                  (call (lexical break-loop ,(get-rename e 'break-loop)))))) ; end (->lambda ... call-with-prompt
+                        ;; break-loop body, which is used to help to setup a new continue-loop with the current environment.
+                        (call (lexical break-loop ,(get-rename e 'break-loop)))
+                        e)) ; end (->lambda (->letrec ... break-loop
+            ,(->lambda e ((kb)) '(void)))) ; In Lua, the `for' statement doesn't return anything, so we just return unspecified value.
+    ('(break)
+     (let ((rename (get-rename e 'break-tag)))
+       (when (not rename) (error 'break "BUG: Impossible here!"))
+       `(call (@@ (guile) abort-to-prompt) (lexical 'break-tag ,rename))))
+    ('(continue)
+     ;; NOTE: guile-lua-rebirth supports 'continue' keyword for better experience
+     (let ((rename (get-rename e 'continue-tag)))
+       (when (not rename) (error 'continue "BUG: Impossible here!"))
+       `(call (@@ (guile) abort-to-prompt) (lexical 'continue-tag ,rename))))
+    (('for ('assign `(id ,v) ('range range ...)) body)
+     ;; NOTE: We have to add prompts tags here, or there's no chance to add them later.
+     (lexical-var-set! e 'break-tag '(const break))
+     (lexical-var-set! e 'continue-tag '(const continue))
+     (match range
+       ((val1 val2)
+        ;;(lexical-var-set! e v val1)
+        (comp `(local (assign (id ,v) ,val1)) e) ; set local var
+        (let* ((v2 (comp val2 e))
+               (vv (string->symbol v))
+               (rename (get-rename e vv)))
+          `(if ,(comp `(lt (id ,v) ,val2) e)
+               ,(comp '(break) e)
+               (begin
+                 (set! (lexical ,vv ,rename) (call (primitive +) (local ,vv ,rename) (const 1)))
+                 ,(comp body e)))))
+       ((val1 val2 val3)
+        ;;(lexical-var-set! e v val1)
+        (comp `(local (assign (id ,v) ,val1)) e) ; set local var
+        (let* ((v2 (comp val2 e))
+               (vv (string->symbol v))
+               (rename (get-rename e vv))
+               (v3 (comp val3 e)))
+          `(if ,(comp `(lt (local (variable ,vv)) ,v2) e)
+               ,(comp '(break) e)
+               (begin
+                 (set! (lexical ,vv ,rename) (call (primitive +) (lexical ,vv ,rename) ,v3))
+                 ,(comp body e)))))
+       (else error 'range "Invalid range syntax!" range)))
+
     ;; arithmatic op
     (`(add ,x ,y)
      (lua-add (comp x e) (comp y e)))
@@ -419,17 +496,15 @@
      `(define
         ,(string->symbol func)
         (lambda ((name . ,(string->symbol func)))
-          ,(->lambda e ((extract-ids p)) body))))
+          ,(->lambda e (,(extract-ids p)) ,(comp body e)))))
     (`(local (func-def (id ,func) (params ,p ...) ,body))
      `(define
         (lexical ,(string->symbol func))
         (lambda ((name . ,(string->symbol func)))
-          ,(->lambda e ((extract-ids p)) body))))
+          ,(->lambda e (,(extract-ids p)) ,(comp body e)))))
     (('anon-func-def ('params p ...) body)
-     ;; TODO: implement anonymous function
-     `(lambda () ,(->lambda e ((extract-ids p)) body)))
+     `(lambda () ,(->lambda e (,(extract-ids p)) ,(comp body e))))
     (('return vals ...)
-     ;;(format #t "return: ~a~%" vals)
      (->return (if (null? vals) vals (comp (car vals) e))))
 
     ;; TODO: finish the rest

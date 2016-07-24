@@ -1,4 +1,4 @@
-GUILE := rtl-guile
+GUILE := guile
 
 .PHONY: test
 

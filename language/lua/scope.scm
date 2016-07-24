@@ -38,7 +38,10 @@
 
             get-proper-func
             get-val-from-scope
-            print-lua-env))
+            print-lua-env
+
+            get-rename
+            lexical-var-set!))
 
 ;; NOTE: Since Lua is not FP, we're not going to implement it as the functional
 ;;       static scope which means the upper level scope will be immutable. That
@@ -107,3 +110,9 @@
         (display "=========end=========\n\n")))
   (display "\n\n=========ENV=========\n")
   (%print-lua-env e))
+
+(define-syntax-rule (get-rename e k)
+  (car (assoc-ref (lua-static-scope-ref e k) 'rename)))
+
+(define-syntax-rule (lexical-var-set! e k v)
+  (lua-static-scope-set! e k `((rename ,(newsym k)) (value ,v))))

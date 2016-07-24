@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014
+;;  Copyright (C) 2013,2014,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -112,7 +112,7 @@
 
 (define *reserved-words*
   '(return function end if then elseif else true false nil or and
-           do while repeat until local for break in not))
+           do while repeat until local for break continue in not))
 
 (define (is-reserved-word? str)
   (and=> (memq (string->symbol str) *reserved-words*) car))

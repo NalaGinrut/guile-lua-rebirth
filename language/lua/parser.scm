@@ -39,7 +39,7 @@
     end until elseif
     (right: while for in function if then #|elseif|# else do)
     (nonassoc: return repeat true false nil)
-    (left: local break)
+    (left: local break continue)
 
     ;; or and not hash
 
@@ -126,9 +126,9 @@
          (loop-stmt do-block) 
          : (match $1
              (() $2)
-             (('rep r) `(rep (scope ,r ,$2)))
-             (else `(while ,$1 do ,$2)))
-         (repeat ublock) : `(repeat ,$2)
+             (('rep r) `(rep (scope (,@r ,$2))))
+             (else `(rep (scope (while ,$1 do ,$2)))))
+         (repeat ublock) : `(rep (scope ,$2))
          (if conds end) : `(if ,@$2)
          ;; named function
          (function func-name func-body) : `(func-def ,$2 ,@$3)
@@ -144,8 +144,8 @@
 
    (repeatition (for assignment) : `(for ,$2))
 
-   (assignment (name assign range) : `(assign ,@$1 ,$3)
-               (name-list in exp-list) : `(assign ,@$1 ,$3))
+   (assignment (name assign range) : `(assign ,$1 ,$3)
+               (name-list in exp-list) : `(assign ,$1 ,$3))
 
    (conds (cond-list) : $1
           (cond-list else block) : `(,@$1 else ,$3))
@@ -196,6 +196,7 @@
 
    (last-stat () : '()
               (break) : '(break)
+              (continue) : '(continue)
               (return return-stat) : $2)
    
    (return-stat (terminator) : '(return)
