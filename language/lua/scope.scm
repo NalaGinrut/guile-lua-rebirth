@@ -112,7 +112,10 @@
   (%print-lua-env e))
 
 (define-syntax-rule (get-rename e k)
-  (car (assoc-ref (lua-static-scope-ref e k) 'rename)))
+  (let ((ll (assoc-ref (lua-static-scope-ref e k) 'rename)))
+    (if ll
+        (car ll)
+        (error 'get-rename "No rename!" k))))
 
 (define-syntax-rule (lexical-var-set! e k v)
   (lua-static-scope-set! e k `((rename ,(newsym k)) (value ,v))))
