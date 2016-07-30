@@ -53,7 +53,7 @@
     add minus multi div mod
     
     ;; NOTE: We handled the correct precedence manually in BNF, so we don't need
-    ;;       to specify it here.
+    ;;       to specify them here.
     ;; according to operations precedence
     ;;(left: or)
     ;;(left: and) 
@@ -123,7 +123,7 @@
    ;;       be produced.
 
    (stat ;; A block can be explicitly delimited to produce a single statement:
-         (loop-stmt do-block) 
+         (loop-stmt do-block)
          : (match $1
              (() $2)
              (('rep r) `(rep (scope (,@r ,$2))))
@@ -205,7 +205,7 @@
    (binding (local bindings) : `(local ,$2)
             (bindings) : $1)
 
-   (bindings (name-list) : `(variable ,$1)
+   (bindings (name-list) : `(print-var ,@$1) ; EXTRA: print var in REPL, guile-lua specified
              (name-list assign exp-list) : `(assign ,@$1 ,$3)
              (function name func-body) : `(func-def ,$2 ,@$3))
 
@@ -346,6 +346,7 @@
                (arith-term) : $1)
    (arith-term (arith-term multi arith-factor) : `(multi ,$1 ,$3)
                (arith-term div arith-factor) : `(div ,$1 ,$3)
+               (arith-factor mod arith-factor) : `(mod ,$1 ,$3)
                (arith-factor) : $1)
    (arith-factor (lparen arith-exp rparen) : $2
                  (misc-exp) : $1)
