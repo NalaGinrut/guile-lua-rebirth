@@ -163,6 +163,7 @@
      (cond
       ((lua-number? c) 'number)
       ((lua-string? c) 'string)
+      ((eq? 'nil c) 'nil)
       (else (error ast-typeof "Fatal0: Invalid type!" c))))
     (else error ast-typeof "Fatal1: Invalid object!" o)))
 
