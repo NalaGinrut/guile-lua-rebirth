@@ -64,65 +64,90 @@
 (define-primitive-emitter expt)
 
 (define *strnum-re* (string->irregex "0x([a-zA-Z0-9]+)"))
-(define (%str->num x)
+(define (%str->num op o x)
+  (define (gen-err-str)
+    (match o
+      (('toplevel ,_)
+       (format #f "attempt to perform arithmetic on global '~a' (a ~a value)" o x))
+      (('lexical ,_ ,__)
+       (format #f "attempt to perform arithmetic on local '~a' (a ~a value)" o x))
+      (('const v)
+       (cond
+        ((string? v)
+         (format #f "attempt to perform arithmetic on a string value '~a'" x))
+        (else (error 'gen-err-str "BUG[0]: Shouldn't be here!"))))
+      (('lambda ,_ ...)
+       (format #f "attempt to perform arithmetic on a string value '~a' (a ~a value)" o x))
+      (else (error 'gen-err-str "BUG[1]: Shouldn't be here!"))))
   ;; NOTE: According to Lua actual activity, if a string can't be converted to a number,
   ;;       say, "0xaz", it will produce a string "0xaz".
   ;; NOTE: Guile will check the type again in the low-level, so we will not check it here.;
-  (format #t "str->num: ~a~%" x)
+  ;;(format #t "str->num: ~a~%" x)
   (match x
    ((? number?) x)
    ((? string? str)
     (let ((sn (irregex-replace *strnum-re* str "#x" 1)))
       (cond
        ((string->number sn) => (lambda (n) `(const ,n)))
-       (else x))))
-   (else (error str->num "Invalid pattern!" x))))
+       (else (error (symbol-append 'operator: op) (gen-err-str))))))
+   (else (error (symbol-append 'operator: op) (gen-err-str)))))
 
 ;; NOTE: Cross module inlined function should accept 'value only, not 'tree-il !!!
-(define (str->num x)
-  (%str->num (fix-for-cross x)))
+(define (str->num op o x)
+  (%str->num op o (fix-for-cross x)))
 
 ;; NOTE: cross module function doesn't need to be tree-il, so the function just return the
 ;;       common value. Don't convert to (const v)!!!
-(define (lua-arith emitter x y)
+(define (lua-arith emitter op x y)
   (format #t "lua-arith: ~a (~a, ~a)~%" emitter x y)
   (match (get-ast-types x y)
     ('(number number)
      (emitter x y))
     ('(string number)
-     (emitter (str->num x) y))
+     (emitter (str->num op x x) y))
     ('(number string)
-     (emitter x (str->num y)))
+     (emitter x (str->num op y y)))
     ('(string string)
-     (emitter (str->num x) (str->num y)))
+     (emitter (str->num op x x) (str->num op y y)))
+    ;; NOTE: We don't do static type check here, we'll need to peval it befoer, here're the rules:
+    ;; 1. If the peval confirmed the value, say, constant inlined, we check it in compile time.
+    ;; 2. If the peval can't confirm the value, we delay it to runtime check.
     ((('lexical name rename) 'number)
-     (emitter `(call (@@ (language lua impl) str->num)
-                     (lexical ,name ,rename))
+     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)
               y))
-    (('number whatever)
-     (emitter x `(call (@@ (language lua impl) str->num)
-                       ,y)))
-    (('string whatever)
-     (emitter (str->num x)
-              `(call (@@ (language lua impl) str->num)
-                     ,y)))
-    ((whatever 'string)
-     (emitter `(call (@@ (language lua impl) str->num)
-                     ,x)
-              (str->num y)))
-    ((whatever1 whatever2)
-     (emitter `(call (@@ (language lua impl) str->num)
-                     ,x)
-              `(call (@@ (language lua impl) str->num)
-                     ,y)))
-    (else (error lua-arith "Fatal: invalid pattern!" (get-ast-types x y)))))
+    (('number ('lexical name rename))
+     (emitter x
+              `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)))
+    ((('toplevel name) 'number)
+     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,x) ,x)
+              y))
+    (('number ('toplevel name))
+     (emitter x
+              `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)))
+    ((('toplevel n1) ('toplevel n2))
+     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,x) ,x)
+              `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)))
+    ((('toplevel n1) ('lexical n2 rn2))
+     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,x) ,x)
+              `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)))
+    ((('lexical n1 rn1) ('toplevel n2))
+     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,x) ,x)
+              `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)))
+    ((('lexical n1 rn1) ('lexical n2 rn2))
+     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,x) ,x)
+              `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)))
+    (else
+     ;; TODO: print better and detailed information for debugging
+     (error lua-arith
+            (format #f "attempt to perform arithmetic on ~a <~a> and ~a <~a>"
+                    x (ast-typeof x) y (ast-typeof y))))))
 
-(define (lua-add x y) (lua-arith lua-primiitve-+ x y))
-(define (lua-minus x y) (lua-arith lua-primiitve-- x y))
-(define (lua-multi x y) (lua-arith lua-primiitve-* x y))
-(define (lua-div x y) (lua-arith lua-primiitve-/ x y))
-(define (lua-mod x y) (lua-arith lua-primiitve-modulo x y))
-(define (lua-expt x y) (lua-arith lua-primiitve-expt x y))
+(define (lua-add x y) (lua-arith lua-primiitve-+ '+ x y))
+(define (lua-minus x y) (lua-arith lua-primiitve-- '- x y))
+(define (lua-multi x y) (lua-arith lua-primiitve-* '* x y))
+(define (lua-div x y) (lua-arith lua-primiitve-/ '/ x y))
+(define (lua-mod x y) (lua-arith lua-primiitve-modulo '% x y))
+(define (lua-expt x y) (lua-arith lua-primiitve-expt 'expt x y))
 
 ;; return value is guile-boolean 
 ;; FIXME: add type checking
