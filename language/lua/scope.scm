@@ -41,7 +41,7 @@
             print-lua-env
 
             get-rename
-            lexical-var-set!))
+            %lexical-var-set!))
 
 ;; NOTE: Since Lua is not FP, we're not going to implement it as the functional
 ;;       static scope which means the upper level scope will be immutable. That
@@ -117,5 +117,6 @@
         (car ll)
         (error 'get-rename "No rename!" k))))
 
-(define-syntax-rule (lexical-var-set! e k v)
+;; Only for special var in guile-lua compiler, don't use it if you're not sure.
+(define-syntax-rule (%lexical-var-set! e k v)
   (lua-static-scope-set! e k `((rename ,(newsym k)) (value ,v))))
