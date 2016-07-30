@@ -34,7 +34,7 @@
   (filter-map
    identity
    (hash-map->list (lambda (k v)
-                     (format #t "PRE: ~a~%" v)
+                     ;;(format #t "PRE: ~a~%" v)
                      (and (not (defined? k))
                           `(define ,k ,(and=> (assoc-ref v 'value) car))))
                    (lua-env-symbol-table e))))
@@ -49,8 +49,8 @@
              (tree-il `(begin
                          ,@(predefine-all-toplevels (current-top-level-environment))
                          ,xxx)))
-        (format #t "Tree-IL: ~%")
-        (pretty-print tree-il)
+        ;;(format #t "Tree-IL: ~%")
+        ;;(pretty-print tree-il)
         tree-il)))
    env
    env))
@@ -224,7 +224,7 @@
                                     ((? symbol? id)
                                      (let ((ss (newsym id))
                                            (ssv (lua-static-scope-ref e id)))
-                                       (format #t "->lambda[1]: Add `~a' to ENV~%" ss)
+                                       ;;(format #t "->lambda[1]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
                                              (lua-static-scope-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
@@ -242,7 +242,7 @@
                                     ((? symbol? id)
                                      (let ((ss (newsym id))
                                            (ssv (lua-static-scope-ref e id)))
-                                       (format #t "->lambda[2]: Add `~a' to ENV~%" ss)
+                                       ;;(format #t "->lambda[2]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
                                              (lua-static-scope-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
@@ -261,6 +261,50 @@
      `(call (primitive values) ,@vals))
     (else vals)))
 
+(define (rep/cnd env cnd step body)
+  ;; NOTE: To implement loop-break, we setup two continuations:
+  ;; 1. "break-loop" continuation for jumping out of all mess
+  ;; 2. "continue-loop" continuation for jumping back to infinite loop
+  `(prompt #f
+     (lexical %break-tag ,(get-rename env '%break-tag))
+     (lambda ()
+       ,(->lambda
+         env ()
+         (->letrec/rep '(%break-loop)
+                       `((lambda ((name . %break-loop))
+                           ,(->lambda
+                             env ()
+                             `(prompt #f
+                                (lexical %continue-tag ,(get-rename env '%continue-tag))
+                                (lambda ()
+                                  ,(->lambda
+                                    env ()
+                                    (->letrec/rep '(%continue-loop)
+                                                  `((lambda ((name . %continue-loop))
+                                                      ,(->lambda
+                                                        env ()
+                                                        `(begin
+                                                           (if (call (primitive not) ,cnd)
+                                                               (void)
+                                                               (begin
+                                                                 ,(comp body env) ; do the block
+                                                                 ,step
+                                                                 (call (lexical %continue-loop ,(get-rename env '%continue-loop)))))))))
+                                                  `(call (lexical %continue-loop ,(get-rename env '%continue-loop))) ; continue to loop
+                                                  env))) ; end (->lambda (->letrec ... continue-loop
+                                (lambda ()
+                                  ,(->lambda
+                                    env ((kc))
+                                    ;; NOTE: If this prompt handler were triggered, it meant "abort" happened somewhere in the continue-loop.
+                                    ;;       Then we should call break-loop for jumping out of continue-loop. This will abandon the current
+                                    ;;       loop and setup a new loop with the current context.
+                                    ;; FIXME: master branch has a bug for 'continue', so we just don't suppprt it at present.
+                                    '(void) #;`(call (lexical break-loop ,(get-rename env 'break-loop))))))))) ; end (->lambda ... call-with-prompt
+                       ;; break-loop body, which is used to help to setup a new continue-loop with the current environment.
+                       `(call (lexical %break-loop ,(get-rename env '%break-loop)))
+                       env))) ; end (->lambda (->letrec ... break-loop
+     (lambda () ,(->lambda env ((kb)) '(void))))) ; In Lua, the `for' statement doesn't return anything, so we just return unspecified value.
+
 ;; for emacs:
 ;; (put 'match 'scheme-indent-function 1)
 
@@ -269,9 +313,9 @@
     (let ((ssv (get-val-from-scope x e)))
       (or (and=> (assoc-ref ssv 'rename) car)
           (error %rename "%rename: Invalid pattern!" ssv))))
-  (display "----------------------[Enter]-------------------------\n")
-  (display src)(newline)
-  (print-lua-env e)
+  ;;(display "----------------------[Enter]-------------------------\n")
+  ;;(display src)(newline)
+  ;;(print-lua-env e)
   (match src
     ;; Literals
     ('(marker nil)
@@ -286,13 +330,13 @@
      `(const ,x))
 
     (('multi-exps exps ...)
-     (format #t "EEE: ~a~%" exps)
+     ;;(format #t "EEE: ~a~%" exps)
      (map (lambda (exp) (comp exp e #:local-bind? local-bind?)) exps))
 
     ;; ref and assignment
-    (`(variable ,_vars) ; global ref
-     (let ((vars (fix-if-multi _vars (comp _vars e))))
-       vars))
+    (`(print-var ,var)
+     ;; EXTRA: print the value of variable in REPL, guile-lua specified
+     (comp var e))
     (`(local (variable ,_vars)) ; local ref
      (let ((vars (fix-if-multi _vars (comp _vars e #:local-bind? #t))))
        (for-each (lambda (v)
@@ -316,10 +360,10 @@
      (let ((vars (fix-if-multi _vars (comp _vars e #:local-bind? #t)))
            (vals (fix-if-multi _vals (comp _vals e))))
        (for-each (lambda (k v)
-                   (let ((lst (lua-static-scope-ref e k))
+                   (let (#;(lst (lua-static-scope-ref e k))
                          (rid (newsym k)))
-                     (when (not lst)
-                           (lua-static-scope-set! e k `((rename ,rid) (value ,v))))))
+                     #;(when (not lst))
+                     (lua-static-scope-set! e k `((rename ,rid) (value ,v)))))
                  vars vals)
        ;; NOTE: Instead emit lexical assignment, we just use let for binding,
        ;;       or there'll be redundant assigment
@@ -329,12 +373,14 @@
      (let ((symid (string->symbol id)))
        (cond
         (local-bind? #;(format #t "local binding: ~a~%" id) symid)
-        ((and (not (lua-global-ref symid)) (lua-static-scope-ref e symid))
+        #;((and (lua-static-scope-ref e symid) (not (lua-global-ref symid)))
          `(lexical ,symid ,(%rename symid)))
         ((lua-global-ref symid)
          ;;(format #t "exist global var: `~a'~%" symid)
          `(toplevel ,symid))
-        (else
+        ((lua-static-scope-ref e symid)
+         `(lexical ,symid ,(%rename symid)))
+        (else ;;'(const nil)))))
          (lua-global-set! symid '((value (const nil))))
          ;;(format #t "non-exist global var: `~a'~%" symid)
          `(toplevel ,symid)))))
@@ -377,79 +423,37 @@
     (('rep rest)
      ;; repeat tagging, just for debug
      (comp rest e))
-    (`(do-block ,body)
-     ;; NOTE: To implement loop-break, we setup two continuations:
-     ;; 1. "break-loop" continuation for jumping out of all mess
-     ;; 2. "continue-loop" continuation for jumping back to infinite loop
-     `(prompt #f
-       (lexical break-tag ,(get-rename e 'break-tag))
-       (lambda ()
-         ,(->lambda
-           e ()
-           (->letrec/rep '(break-loop)
-                         `((lambda ((name . break-loop))
-                             ,(->lambda
-                               e ()
-                               `(prompt #f
-                                  (lexical continue-tag ,(get-rename e 'continue-tag))
-                                  (lambda ()
-                                    ,(->lambda
-                                      e ()
-                                      (->letrec/rep '(continue-loop)
-                                                    `((lambda ((name . continue-loop))
-                                                        ,(->lambda
-                                                          e ()
-                                                          `(begin
-                                                             ,(comp body e) ; do the block
-                                                             (call (lexical continue-loop ,(get-rename e 'continue-loop)))))))
-                                                    `(call (lexical continue-loop ,(get-rename e 'continue-loop))) ; continue to loop
-                                                    e))) ; end (->lambda (->letrec ... continue-loop
-                                  (lambda ()
-                                    ,(->lambda
-                                      e ((kc))
-                                      ;; NOTE: If this prompt handler were triggered, it meant "abort" happened somewhere in the continue-loop.
-                                      ;;       Then we should call break-loop for jumping out of continue-loop. This will abandon the current
-                                      ;;       loop and setup a new loop with the current context.
-                                      `(call (lexical break-loop ,(get-rename e 'break-loop))))))))) ; end (->lambda ... call-with-prompt
-                         ;; break-loop body, which is used to help to setup a new continue-loop with the current environment.
-                         `(call (lexical break-loop ,(get-rename e 'break-loop)))
-                         e))) ; end (->lambda (->letrec ... break-loop
-       (lambda () ,(->lambda e ((kb)) '(void))))) ; In Lua, the `for' statement doesn't return anything, so we just return unspecified value.
+    (('do-block ,body)
+     (comp body e))
     ('(break)
-     (let ((rename (get-rename e 'break-tag)))
+     (let ((rename (get-rename e '%break-tag)))
        (when (not rename) (error 'break "BUG: Impossible here!"))
-       `(abort (lexical break-tag ,rename) () (const ()))))
+       `(abort (lexical %break-tag ,rename) () (const ()))))
     ('(continue)
      ;; NOTE: guile-lua-rebirth supports 'continue' keyword for better experience
-     (let ((rename (get-rename e 'continue-tag)))
+     (let ((rename (get-rename e '%continue-tag)))
        (when (not rename) (error 'continue "BUG: Impossible here!"))
-       `(abort (lexical continue-tag ,rename) () (const ()))))
+       `(abort (lexical %continue-tag ,rename) () (const ()))))
     (('for ('assign `(id ,v) ('range range ...)) body)
      ;; NOTE: We have to add prompts tags here, or there's no chance to add them later.
-     (lexical-var-set! e 'break-tag '(const break))
-     (lexical-var-set! e 'continue-tag '(const continue))
+     (%lexical-var-set! e '%break-tag '(const break))
+     (%lexical-var-set! e '%continue-tag '(const continue))
      (match range
        ((val1 val2)
-        ;;(lexical-var-set! e v val1)
-        (comp `(local (assign (id ,v) ,val1)) e) ; set local var
-        (let* ((vv (string->symbol v))
-               (rename (get-rename e vv)))
-          `(if ,(comp `(lt (id ,v) ,val2) e)
-               ,(comp '(break) e)
-               (begin
-                 (set! (lexical ,vv ,rename) (call (primitive +) (lexical ,vv ,rename) (const 1)))
-                 ,(comp body e)))))
-       ((val1 val2 val3)
-        ;;(lexical-var-set! e v val1)
         (comp `(local (assign (id ,v) ,val1)) e) ; set local var
         (let* ((vv (string->symbol v))
                (rename (get-rename e vv))
-               (v3 (comp val3 e)))
-          `(if ,(comp `(lt (id ,v) ,val2) e)
-               ,(comp '(break) e)
-               (begin
-                 (set! (lexical ,vv ,rename) (call (primitive +) (lexical ,vv ,rename) ,v3))
-                 ,(comp body e)))))
+               (cnd (comp `(leq (id ,v) ,val2) e))
+               (step `(set! (lexical ,vv ,rename) (call (primitive +) (lexical ,vv ,rename) (const 1)))))
+          (rep/cnd e cnd step body)))
+       ((val1 val2 val3)
+        (comp `(local (assign (id ,v) ,val1)) e) ; set local var
+        (let* ((vv (string->symbol v))
+               (rename (get-rename e vv))
+               (v3 (comp val3 e))
+               (cnd  (comp `(leq (id ,v) ,val2) e))
+               (step `(set! (lexical ,vv ,rename) (call (primitive +) (lexical ,vv ,rename) ,v3))))
+          (rep/cnd e cnd step body)))
        (else error 'range "Invalid range syntax!" range)))
 
     ;; arithmatic op
@@ -476,7 +480,7 @@
     (`(geq ,x ,y)
      (lua-geq (comp x e) (comp y e)))
     (`(leq ,x ,y)
-     (lua-lt (comp x e) (comp y e)))
+     (lua-leq (comp x e) (comp y e)))
     (`(not ,x)
      (lua-not (comp x e)))
 
