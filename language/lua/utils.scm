@@ -66,7 +66,8 @@
             compile-string
             fix-for-cross
             fix-if-multi
-            in-repl?))
+            in-repl?
+            ->tnp))
 
 (define (location x)
   (and (pair? x)
@@ -222,3 +223,19 @@
 
 (define (in-repl?)
   (not (null? (fluid-ref *repl-stack*))))
+
+(define (->tnp r)
+  (define (->fix o)
+    (match o
+      (`(id ,x) (string->symbol x))
+      (else (error '->tnp "BUG: Shouldn't be here!" o))))
+  (cond
+   ((null? r) (error 'namespace "BUG[0]: Shouldn't be here!" r))
+   ((= (length r) 1) (values (->fix r) #f #f))
+   ((= (length r) 2) (values (->fix (car r)) `(const ,(->fix (cadr r))) #f))
+   (else (values
+          (->fix (car r))
+          (list-head r (- (length r) 2))
+          (match (list-tail r (- (length r) 2))
+            (`((id ,x)) `(const ,(string->symbol x)))
+            (else (error 'namespace "BUG[1]: Shouldn't be here!" r)))))))
