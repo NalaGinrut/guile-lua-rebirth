@@ -294,9 +294,9 @@
                       (lbrace field-list comma rbrace) : `(table ,@$2)
                       (lbrace field-list semi-colon rbrace) : `(table ,@$2))
 
-   (field-list (field) : $1
-               (field-list comma field) : `(,$1 ,$3)
-               (field-list semi-colon field) : `(,$1 ,$3))
+   (field-list (field) : (list $1)
+               (field-list comma field) : `(,@$1 ,$3)
+               (field-list semi-colon field) : `(,@$1 ,$3))
 
    (field (exp) : $1
           (name assign exp) : `(tb-key-set! ,$1 ,$3)
