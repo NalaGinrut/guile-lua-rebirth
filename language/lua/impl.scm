@@ -99,7 +99,7 @@
 ;; NOTE: cross module function doesn't need to be tree-il, so the function just return the
 ;;       common value. Don't convert to (const v)!!!
 (define (lua-arith emitter op x y)
-  (format #t "lua-arith: ~a (~a, ~a)~%" emitter x y)
+  ;;(format #t "lua-arith: ~a (~a, ~a)~%" emitter x y)
   (match (get-ast-types x y)
     ('(number number)
      (emitter x y))
@@ -109,7 +109,7 @@
      (emitter x (str->num op y y)))
     ('(string string)
      (emitter (str->num op x x) (str->num op y y)))
-    ;; NOTE: We don't do static type check here, we'll need to peval it befoer, here're the rules:
+    ;; NOTE: We don't do static type check here, we'll need to peval it before, here're the rules:
     ;; 1. If the peval confirmed the value, say, constant inlined, we check it in compile time.
     ;; 2. If the peval can't confirm the value, we delay it to runtime check.
     ((('lexical name rename) 'number)
@@ -138,7 +138,7 @@
               `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)))
     (else
      ;; TODO: print better and detailed information for debugging
-     (error lua-arith
+     (error (symbol-append 'operator: op)
             (format #f "attempt to perform arithmetic on ~a <~a> and ~a <~a>"
                     x (ast-typeof x) y (ast-typeof y))))))
 
@@ -147,7 +147,7 @@
 (define (lua-multi x y) (lua-arith lua-primiitve-* '* x y))
 (define (lua-div x y) (lua-arith lua-primiitve-/ '/ x y))
 (define (lua-mod x y) (lua-arith lua-primiitve-modulo '% x y))
-(define (lua-expt x y) (lua-arith lua-primiitve-expt 'expt x y))
+(define (lua-expt x y) (lua-arith lua-primiitve-expt '^ x y))
 
 ;; return value is guile-boolean 
 ;; FIXME: add type checking
