@@ -19,10 +19,12 @@
   #:use-module (language lua scope)
   #:use-module (language lua impl)
   #:use-module (language lua optimize)
+  #:use-module (language lua table)
   #:use-module (language tree-il)
   #:use-module (ice-9 match)
   #:use-module (ice-9 pretty-print)
   #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-11)
   #:export (compile-tree-il))
 
 (define (lua-init)
@@ -313,9 +315,9 @@
     (let ((ssv (get-val-from-scope x e)))
       (or (and=> (assoc-ref ssv 'rename) car)
           (error %rename "%rename: Invalid pattern!" ssv))))
-  ;;(display "----------------------[Enter]-------------------------\n")
-  ;;(display src)(newline)
-  ;;(print-lua-env e)
+  (display "----------------------[Enter]-------------------------\n")
+  (display src)(newline)
+  (print-lua-env e)
   (match src
     ;; Literals
     ('(marker nil)
@@ -329,6 +331,49 @@
     (`(string ,x)
      `(const ,x))
 
+    ;; Tables
+    ;; NOTE: All the keys in string are stored as symbols
+    (('table rest ...)
+     (->let
+      '(tb)
+      (list (new-lua-table))
+      `(begin
+         ,@(map
+            (lambda (pattern)
+              (match pattern
+                (('tb-key-set! `(id ,k) v)
+                 `(call (@ (language lua table) try-lua-table-set!)
+                        (lexical tb ,(get-rename e 'tb))
+                        (const ,(string->symbol k))
+                        ,(comp v e)))
+                (else (error 'table-operation "BUG: Shouldn't be here!" pattern))))
+            rest)
+         (lexical tb ,(get-rename e 'tb)))
+      e))
+
+    ;; Namespaces
+    (('namespace rest ...)
+     (let-values (((t n p) (->tnp rest)))
+       (let ((tt (if (lua-global-ref t)
+                     `(toplevel ,t)
+                     `(lexical ,t ,(get-rename e t)))))
+         (cond
+          ((and (not n) (not p)) ; return table
+           tt)
+          ((not p) ; table with one ref
+           `(call (@ (language lua table) lua-table-ref)
+                  ,tt
+                  ,n))
+          (else
+           (fold (lambda (x y)
+                   (match x
+                     (`(id ,x)
+                      `(call (@ (language lua table) lua-table-ref)
+                             ,(comp x e)
+                             ,y))
+                     (else 'namespace "BUG[1]: Shouldn't be here!" x)))
+                 p n))))))
+    
     (('multi-exps exps ...)
      ;;(format #t "EEE: ~a~%" exps)
      (map (lambda (exp) (comp exp e #:local-bind? local-bind?)) exps))
