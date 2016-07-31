@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014,2015
+;;  Copyright (C) 2014,2015,2016
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -24,7 +24,11 @@
   #:use-module (srfi srfi-43)
   #:use-module (srfi srfi-69)
   #:use-module ((rnrs) #:select (div))
-  #:export ())
+  #:export (new-lua-table
+            try-lua-array-set!
+            lua-array-ref
+            try-lua-table-set!
+            lua-table-ref))
 
 (define-record-type <lua-table>
   (%make-lua-table hash-part array-part array-max)
@@ -36,6 +40,9 @@
 (define (make-lua-table)
   (%make-lua-table #f #f 0))
 
+(define (new-lua-table)
+  `(call (@@ (language lua table) make-lua-table)))
+
 (define (create-array-part size)
   (make-array #f (if (zero? size) 1 size)))
 
@@ -46,13 +53,17 @@
     (lua-table-array-max! t i)
     (lua-table-array-part! t new-ap)))
 
-(define (try-array-set! t i v)
+(define (try-lua-array-set! t i v)
   (let ((ap (lua-table-array-part t)))
     (array-set! ap v i)
     (lua-table-array-max! t (max i (lua-table-array-max t)))))
 
+(define (lua-array-ref t i)
+  (let ((ap (lua-table-array-part t)))
+    (array-ref ap i)))
+
 (define (array-should-be-resized? t)
-  (let* ((ap (lua-array-hash-part t))
+  (let* ((ap (lua-table-hash-part t))
          (size (lua-table-array-max t))
          (half (div size 2)))
     ;; all the numbers of 1 ~ (n/2) are in the slots
@@ -70,10 +81,10 @@
             #f ; not all numbers of 1 ~ (n/2) are in the slots
             (lp (1+ i) (> (1+ i) half)))))))) ; try next number
 
-(define (try-hashtable-set! t k v)
+(define (try-lua-table-set! t k v)
   (let ((tp (lua-table-hash-part t)))
     (when (not tp) (lua-table-hash-part! t (make-hash-table)))
-    (hash-table-set! (lua-table-hash-part t k v))))
+    (hash-table-set! (lua-table-hash-part t) k v)))
 
 (define (lua-table-set! t k v)
   (cond
@@ -86,11 +97,11 @@
           (resize-array-part! t k))
     (cond
      ;; integer k < array-size will store in the array
-     ((lua-table-array-part t) (try-array-set! t k v))
+     ((lua-table-array-part t) (try-lua-array-set! t k v))
      ;; integer k >= array-size will store in the hashtable
-     (else (try-hashtable-set! t k v))))
+     (else (try-lua-table-set! t k v))))
    ;; non-integer k will store in the hashtable
-   (else (try-hashtable-set! t k v))))
+   (else (try-lua-table-set! t k v))))
 
 ;; if no value in table, then return nil
 (define (lua-table-ref t k)
@@ -98,6 +109,6 @@
    (cond
     ((integer? k)
      (or (array-ref (lua-table-array-part t) k)
-         (hash-ref (lua-table-hash-part t) k)))
-    (else (hash-ref (lua-table-hash-part t) k)))
+         (hash-table-ref (lua-table-hash-part t) k)))
+    (else (hash-table-ref (lua-table-hash-part t) k)))
    (gen-nil)))
