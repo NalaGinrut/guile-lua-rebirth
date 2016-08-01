@@ -334,22 +334,23 @@
     ;; Tables
     ;; NOTE: All the keys in string are stored as symbols
     (('table rest ...)
-     (->let
-      '(tb)
-      (list (new-lua-table))
-      `(begin
-         ,@(map
-            (lambda (pattern)
-              (match pattern
-                (('tb-key-set! `(id ,k) v)
-                 `(call (@ (language lua table) try-lua-table-set!)
-                        (lexical tb ,(get-rename e 'tb))
-                        (const ,(string->symbol k))
-                        ,(comp v e)))
-                (else (error 'table-operation "BUG: Shouldn't be here!" pattern))))
-            rest)
-         (lexical tb ,(get-rename e 'tb)))
-      e))
+     (let ((tbn (gensym "tb")))
+       (->let
+        (list tbn)
+        (list (new-lua-table))
+        `(begin
+           ,@(map
+              (lambda (pattern)
+                (match pattern
+                  (('tb-key-set! `(id ,k) v)
+                   `(call (@ (language lua table) try-lua-table-set!)
+                          (lexical ,tbn ,(get-rename e tbn))
+                          (const ,(string->symbol k))
+                          ,(comp v e)))
+                  (else (error 'table-operation "BUG: Shouldn't be here!" pattern))))
+              rest)
+           (lexical ,tbn ,(get-rename e tbn)))
+        e)))
 
     ;; Namespaces
     (('namespace rest ...)
