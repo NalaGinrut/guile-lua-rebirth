@@ -183,8 +183,11 @@
    (exp-list (exp) : $1
              (multi-exps) : `(multi-exps ,@$1))
 
-   (multi-exps (exp comma exp) : (list $1 $3)
-               (multi-exps comma exp) : `(,$1 ,@$3))
+   (multi-exps (exp comma exp) : `(,$1 ,$3)
+               (multi-exps comma exp)
+               : (match $1
+                   (('id x) $1)
+                   (else `(,@$1 ,$3))))
 
    (range (exp comma exp range-rest)
           : (if (null? $4) 
