@@ -104,7 +104,10 @@
    (else (try-lua-table-set! t k v))))
 
 ;; if no value in table, then return nil
-(define (lua-table-ref t k)
+(define (lua-table-ref t k tsym)
+  (when (not (is-lua-table? t))
+        (error 'lua-table-ref
+               (format #f "attempt to index field '~a' (a ~a value)" tsym (ast-typeof t))))
   (or
    (cond
     ((integer? k)
