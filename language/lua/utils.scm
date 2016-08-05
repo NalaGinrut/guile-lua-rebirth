@@ -67,6 +67,7 @@
             fix-for-cross
             fix-if-multi
             in-repl?
+            id->key
             ->tnp))
 
 (define (location x)
@@ -224,18 +225,33 @@
 (define (in-repl?)
   (not (null? (fluid-ref *repl-stack*))))
 
-(define (->tnp r)
-  (define (->fix o)
+(define (id->key o)
+    (match o
+      (`(id ,x) `(const ,(string->symbol x)))
+      (else (error 'id->key "BUG: Shouldn't be here!" o))))
+
+;; symbol -> id-list -> id-list
+;; table name -> final ref -> table ref
+(define (->tnp rr)
+  (define (ns->lst ns)
+    (match ns
+      (() '())
+      (`(id ,x) ns)
+      (`(namespace (id ,p1) (id ,p2))
+       (list `(id ,p1) `(id ,p2)))
+      (('namespace rest p1)
+       `(,@(ns->lst rest) ,(ns->lst p1)))
+      (else (error 'ns->lst "BUG[1]: Shouldn't be here!" ns))))
+  (define (->sym o)
     (match o
       (`(id ,x) (string->symbol x))
-      (else (error '->tnp "BUG: Shouldn't be here!" o))))
+      (else (error '->sym "BUG[2]: Shouldn't be here!" o))))
+  (define r (ns->lst rr))
   (cond
-   ((null? r) (error 'namespace "BUG[0]: Shouldn't be here!" r))
-   ((= (length r) 1) (values (->fix r) #f #f))
-   ((= (length r) 2) (values (->fix (car r)) `(const ,(->fix (cadr r))) #f))
+   ((null? r) (error 'namespace "BUG[3]: Shouldn't be here!" r))
+   ((= (length r) 1) (values (->sym r) #f #f))
+   ((= (length r) 2) (values (->sym (car r)) (cadr r) #f))
    (else (values
-          (->fix (car r))
+          (->sym (car r))
           (list-head r (- (length r) 2))
-          (match (list-tail r (- (length r) 2))
-            (`((id ,x)) `(const ,(string->symbol x)))
-            (else (error 'namespace "BUG[1]: Shouldn't be here!" r)))))))
+          (list-tail r 1)))))
