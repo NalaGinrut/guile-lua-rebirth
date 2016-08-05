@@ -344,6 +344,7 @@
                 (match pattern
                   (('tb-key-set! `(id ,k) v)
                    `(call (@ (language lua table) try-lua-table-set!)
+                          `(const ,tbn)
                           (lexical ,tbn ,(get-rename e tbn))
                           (const ,(string->symbol k))
                           ,(comp v e)))
@@ -567,7 +568,14 @@
           ,(->lambda e (,(extract-ids p)) (comp body e)))))
     (('func-def ('namespace ns ...) ('colon-ref `(id ,func)) ('params p ...) body)
      (format #t "FFF: ~a, ~a, ~a, ~a~%" ns func p body)
-     )
+     #;(let lp((n (reverse ns)) (ret '()))
+       (cond
+        ((null? n)
+         (comp `(table ,ret) e))
+        (else
+         (lp (cdr n)
+             `(tb-key-set! `(id ,n
+              )))))))
     (`(local (func-def (id ,func) (params ,p ...) ,body))
      `(define
         (lexical ,(string->symbol func))
