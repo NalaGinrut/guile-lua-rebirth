@@ -81,7 +81,10 @@
             #f ; not all numbers of 1 ~ (n/2) are in the slots
             (lp (1+ i) (> (1+ i) half)))))))) ; try next number
 
-(define (try-lua-table-set! t k v)
+(define (try-lua-table-set! tsym t k v)
+  (when (not (is-lua-table? t))
+        (error 'lua-table-ref
+               (format #f "attempt to index field '~a' (a ~a value)" tsym (ast-typeof t))))
   (let ((tp (lua-table-hash-part t)))
     (when (not tp) (lua-table-hash-part! t (make-hash-table)))
     (hash-table-set! (lua-table-hash-part t) k v)))

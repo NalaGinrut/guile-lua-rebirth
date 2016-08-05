@@ -354,27 +354,33 @@
 
     ;; Namespaces
     (('namespace rest ...)
-     (let-values (((t n p) (->tnp rest)))
+     (let-values (((t n p) (->tnp `(namespace ,@rest))))
        (let ((tt (if (lua-global-ref t)
                      `(toplevel ,t)
                      `(lexical ,t ,(get-rename e t)))))
+         ;;(format #t "TT: ~a, ~a, ~a~%" tt n p)
          (cond
           ((and (not n) (not p)) ; return table
            tt)
           ((not p) ; table with one ref
            `(call (@ (language lua table) lua-table-ref)
                   ,tt
-                  ,n))
+                  ,(id->key n)
+                  (const ,t)))
           (else
-           (fold (lambda (x y)
-                   (match x
-                     (`(id ,x)
-                      `(call (@ (language lua table) lua-table-ref)
-                             ,(comp x e)
-                             ,y))
-                     (else 'namespace "BUG[1]: Shouldn't be here!" x)))
-                 p n))))))
-    
+           (cdr
+            (fold (lambda (x y)
+                    (match x
+                      (`(id ,id)
+                       (cons
+                        `(const ,(string->symbol id))
+                        `(call (@ (language lua table) lua-table-ref)
+                               ,(cdr y)
+                               ,(id->key x)
+                               ,(car y))))
+                      (else 'namespace "BUG[1]: Shouldn't be here!" x)))
+                  (cons `(const ,t) tt) p)))))))
+
     (('multi-exps exps ...)
      ;;(format #t "EEE: ~a~%" exps)
      (map (lambda (exp) (comp exp e #:local-bind? local-bind?)) exps))
@@ -559,6 +565,9 @@
         ,(string->symbol func)
         (lambda ((name . ,(string->symbol func)))
           ,(->lambda e (,(extract-ids p)) (comp body e)))))
+    (('func-def ('namespace ns ...) ('colon-ref `(id ,func)) ('params p ...) body)
+     (format #t "FFF: ~a, ~a, ~a, ~a~%" ns func p body)
+     )
     (`(local (func-def (id ,func) (params ,p ...) ,body))
      `(define
         (lexical ,(string->symbol func))
