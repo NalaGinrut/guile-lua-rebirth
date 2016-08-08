@@ -113,7 +113,7 @@
     ;; 1. If the peval confirmed the value, say, constant inlined, we check it in compile time.
     ;; 2. If the peval can't confirm the value, we delay it to runtime check.
     ((('lexical name rename) 'number)
-     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,y) ,y)
+     (emitter `(call (@@ (language lua impl) str->num) (const ,op) (const ,x) ,x)
               y))
     (('number ('lexical name rename))
      (emitter x
