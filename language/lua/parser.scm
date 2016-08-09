@@ -239,7 +239,7 @@
               ;; * calling: t.a.b.c.f(t.a.b.c, params)
               ;; NOTE: same way for calling!
               (prefix-exp colon name args) 
-              : `(func-colon-call (namespace ,$1 ,$3) ,$4)
+              : `(func-colon-call (namespace ,$1 (colon-ref ,$3)) ,$4)
               )
 
    ;; ;; Variables are places that store values.
@@ -279,7 +279,7 @@
    ;; need new scope to hold the params bindings
    (func-body (params block end terminator) : `(,$1 ,$2))
 
-   (params (lparen par-list rparen) : `(params ,@$2))
+   (params (lparen par-list rparen) : `(params ,$2))
 
    (par-list () : '((void))
              (name-list) : $1
@@ -289,7 +289,7 @@
               (name-lists) : `(multi-exps ,@$1))
 
    (name-lists (name comma name) : (list $1 $3)
-               (name-lists comma name) : `(,$1 ,@$3)
+               (name-lists comma name) : `(,@$1 ,$3)
                (name-list comma tri-dots) : `(,@$1 ,$3))
 
    (table-constructor (lbrace rbrace) : '(table)
