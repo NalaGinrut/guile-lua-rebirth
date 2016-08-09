@@ -68,7 +68,8 @@
             fix-if-multi
             in-repl?
             id->key
-            ->tnp))
+            ->tnp
+            ->drop-func-ref))
 
 (define (location x)
   (and (pair? x)
@@ -237,6 +238,9 @@
     (match ns
       (() '())
       (`(id ,x) ns)
+      (`(namespace ,rest (colon-ref ,p2))
+       ;; get rid of colon-ref, since it's already handled before
+       `(,@(ns->lst rest)))
       (`(namespace (id ,p1) (id ,p2))
        (list `(id ,p1) `(id ,p2)))
       (('namespace rest p1)
@@ -255,3 +259,8 @@
           (->sym (car r))
           (list-head r (- (length r) 2))
           (list-tail r 1)))))
+
+(define (->drop-func-ref ns)
+  (match ns
+    (('namespace p _) p)
+    (else (error '->drop-func-ref "BUG: Shouldn't be here!" ns))))
