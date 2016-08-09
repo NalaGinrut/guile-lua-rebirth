@@ -98,9 +98,10 @@
 (define (get-proper-func fname env)
   (get-val-from-scope fname env))
 
+;; Should be used in %rename only.
 (define (get-val-from-scope name env)
   (or (lua-static-scope-ref env name)
-      (throw 'lua-error "No such identifier in the scope" name)))
+      (error 'get-val-from-scope "BUG: No such identifier in the scope" name)))
 
 (define (print-lua-env e)
   (define (%print-lua-env ee)
