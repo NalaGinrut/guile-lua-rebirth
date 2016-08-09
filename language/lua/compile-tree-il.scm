@@ -137,13 +137,20 @@
   (or (defined? o the-root-module)
       (memq o *toplevel-ops*)))
 
+(define (multi-exps? x)
+  (match x
+    (('multi-exps rest ...) (display "multi-exps!\n") #t)
+    (else (display "not multi-exps!\n") #f)))
+
 (define (extract-ids ids)
   (map (lambda (x)
          (match x
            ('(void) 'void)
            (`(id ,id) (string->symbol id))
            (else (error extract-ids "Invalid ids pattern!" x))))
-       ids))
+       (if (multi-exps? (car ids))
+           (cdar ids)
+           (car ids))))
 
 (define *default-toplevel-module* (resolve-module '(guile-user)))
 
@@ -157,11 +164,6 @@
   ;; NOTE: If you define a var in toplevel, you can't find it in the-root-module,
   ;;       which is for primitives.
   (defined? v *default-toplevel-module*))
-
-(define (multi-exps? x)
-  (match x
-    (('multi-exps rest ...) #t)
-    (else #f)))
 
 (define (->scope id pred)
   (cond
@@ -184,6 +186,16 @@
     (() '())
     ((expr rest ...) `(,(comp expr e) ,@(apply body-expander rest)))
     (else (error body-expander "Invalid body pattern!" body))))
+
+(define (->table-ref-func ns)
+  (match ns
+    (('namespace _ `(colon-ref (id ,func)))
+     (display "has cref!\n")
+     (values #t (string->symbol func)))
+    (('namespace _ `(id ,func))
+     (display "no cref!\n")
+     (values #f (string->symbol func)))
+    (else (error '->table-ref-func "BUG: Shouldn't be here!" ns))))
 
 ;; <lambda>
 ;; GRAMMAR:
@@ -300,12 +312,15 @@
                                     ;; NOTE: If this prompt handler were triggered, it meant "abort" happened somewhere in the continue-loop.
                                     ;;       Then we should call break-loop for jumping out of continue-loop. This will abandon the current
                                     ;;       loop and setup a new loop with the current context.
-                                    ;; FIXME: master branch has a bug for 'continue', so we just don't suppprt it at present.
-                                    '(void) #;`(call (lexical break-loop ,(get-rename env 'break-loop))))))))) ; end (->lambda ... call-with-prompt
+                                    `(begin
+                                       ,step
+                                       (call (lexical break-loop ,(get-rename env '%break-loop)))))))))) ; end (->lambda ... call-with-prompt
                        ;; break-loop body, which is used to help to setup a new continue-loop with the current environment.
                        `(call (lexical %break-loop ,(get-rename env '%break-loop)))
                        env))) ; end (->lambda (->letrec ... break-loop
      (lambda () ,(->lambda env ((kb)) '(void))))) ; In Lua, the `for' statement doesn't return anything, so we just return unspecified value.
+
+(define *special-var* '(self))
 
 ;; for emacs:
 ;; (put 'match 'scheme-indent-function 1)
@@ -344,7 +359,7 @@
                 (match pattern
                   (('tb-key-set! `(id ,k) v)
                    `(call (@ (language lua table) try-lua-table-set!)
-                          `(const ,tbn)
+                          (const ,tbn)
                           (lexical ,tbn ,(get-rename e tbn))
                           (const ,(string->symbol k))
                           ,(comp v e)))
@@ -427,16 +442,21 @@
        (cond
         (local-bind? #;(format #t "local binding: ~a~%" id) symid)
         #;((and (lua-static-scope-ref e symid) (not (lua-global-ref symid)))
-         `(lexical ,symid ,(%rename symid)))
+        `(lexical ,symid ,(%rename symid)))
         ((lua-global-ref symid)
          ;;(format #t "exist global var: `~a'~%" symid)
          `(toplevel ,symid))
         ((lua-static-scope-ref e symid)
          `(lexical ,symid ,(%rename symid)))
-        (else ;;'(const nil)))))
-         (lua-global-set! symid '((value (const nil))))
-         ;;(format #t "non-exist global var: `~a'~%" symid)
-         `(toplevel ,symid)))))
+        (else
+         (cond
+          ((and (memq symid *special-var*) ; special var, need to be lexical
+                (lua-static-scope-ref e symid)) ; and was initialized
+           `(lexical ,symid ,(%rename symid)))
+          (else ; undefined global var, set to '(const nil)))))
+           (lua-global-set! symid '((value (const nil))))
+           ;;(format #t "non-exist global var: `~a'~%" symid)
+           `(toplevel ,symid)))))))
 
     ;; scope and statment
     (('scope rest)
@@ -536,7 +556,7 @@
      (lua-leq (comp x e) (comp y e)))
     (`(not ,x)
      (lua-not (comp x e)))
-
+    
     ;; functions
     (('func-call ('id func) ('args args ...))
      ;;(format #t "func-call: ~a~%" args)
@@ -560,23 +580,76 @@
                        (if (multi-exps? x)
                            (comp x e)
                            (list (comp x e))))))))))
+    (('func-colon-call ('namespace ns ...) ('args args ...))
+     (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
+       (let* ((self (comp (->drop-func-ref `(namespace ,@ns)) e))
+              (tv `(call (@ (language lua table) lua-table-ref)
+                         ,self
+                         (const ,func)
+                         ,(car (list-tail self (1- (length self))))))
+              (self-rename `(call (toplevel car) ,tv))
+              (tf `(call (toplevel cdr) ,tv))
+              (cf (->call
+                   func
+                   (lambda (_) tf)
+                   (if (null? args)
+                       args
+                       (let ((x (car args)))
+                         (if (multi-exps? x)
+                             (comp x e)
+                             (list (comp x e))))))))
+         `(let (self) ,(list self-rename) ,(list self) ,cf)
+         #;
+         `(begin
+         (set! (lexical self ,self-rename) ,self)
+         ,cf))))
+    (('func-call ('namespace ns ...) ('args args ...))
+     (let ((self (comp (->drop-func-ref `(namespace ,@ns)) e)))
+       (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
+         (->call
+          func
+          (lambda (f)
+            `(call (toplevel cdr)
+                   (call (@ (language lua table) lua-table-ref)
+                         ,self
+                         (const ,f)
+                         ,(car (list-tail self (1- (length self)))))))
+          (if (null? args)
+              args
+              (let ((x (car args)))
+                (if (multi-exps? x)
+                    (comp x e)
+                    (list (comp x e)))))))))
     (('func-def `(id ,func) ('params p ...) body)
-     ;;(format #t "func-def: ~a~%" p)
      `(define
         ,(string->symbol func)
         (lambda ((name . ,(string->symbol func)))
           ,(->lambda e (,(extract-ids p)) (comp body e)))))
-    (('func-def ('namespace ns ...) ('colon-ref `(id ,func)) ('params p ...) body)
-     (format #t "FFF: ~a, ~a, ~a, ~a~%" ns func p body)
-     #;(let lp((n (reverse ns)) (ret '()))
-       (cond
-        ((null? n)
-         (comp `(table ,ret) e))
-        (else
-         (lp (cdr n)
-             `(tb-key-set! `(id ,n
-              )))))))
-    (`(local (func-def (id ,func) (params ,p ...) ,body))
+    (('func-def ('namespace ns ...) ('params p ...) body)
+     (let ((self (comp (->drop-func-ref `(namespace ,@ns)) e)))
+       (let-values (((cref? func) (->table-ref-func `(namespace ,@ns))))
+         (let* ((sn (if cref?
+                        (let ((self-rename (newsym 'self)))
+                          (lua-static-scope-set! e 'self `((rename ,self-rename) (value (const nil))))
+                          self-rename)
+                        #f))
+                (refexp
+                 `(call (@ (language lua table) try-lua-table-set!)
+                        ,(car (list-tail self (1- (length self))))
+                        ,self
+                        (const ,func)
+                        (call (toplevel cons)
+                              (const ,sn)
+                              (lambda ()
+                                ,(->lambda
+                                  e
+                                  (,(extract-ids p))
+                                  (comp body e)))))))
+           `(let (self)
+              (list sn)
+              (if cref? (list self) `((const nil)))
+              ,refexp)))))
+    (('local ('func-def `(id ,func) ('params p ...) body))
      `(define
         (lexical ,(string->symbol func))
         (lambda ((name . ,(string->symbol func)))
