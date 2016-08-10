@@ -441,13 +441,12 @@
      (let ((symid (string->symbol id)))
        (cond
         (local-bind? #;(format #t "local binding: ~a~%" id) symid)
-        #;((and (lua-static-scope-ref e symid) (not (lua-global-ref symid)))
-        `(lexical ,symid ,(%rename symid)))
-        ((lua-global-ref symid)
-         ;;(format #t "exist global var: `~a'~%" symid)
-         `(toplevel ,symid))
-        ((lua-static-scope-ref e symid)
+        ((is-lexical-bind? e symid)
+         (format #t "exist lexical var: `~a'~%" symid)
          `(lexical ,symid ,(%rename symid)))
+        ((lua-global-ref symid)
+         (format #t "exist global var: `~a'~%" symid)
+         `(toplevel ,symid))
         (else
          (cond
           ((and (memq symid *special-var*) ; special var, need to be lexical
@@ -598,11 +597,7 @@
                          (if (multi-exps? x)
                              (comp x e)
                              (list (comp x e))))))))
-         `(let (self) ,(list self-rename) ,(list self) ,cf)
-         #;
-         `(begin
-         (set! (lexical self ,self-rename) ,self)
-         ,cf))))
+         cf)))
     (('func-call ('namespace ns ...) ('args args ...))
      (let ((self (comp (->drop-func-ref `(namespace ,@ns)) e)))
        (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
@@ -645,9 +640,24 @@
                                   e
                                   (,(extract-ids p))
                                   (comp body e)))))))
+           ;; NOTE: Yes, we changed something from the original Lua.
+           ;;       No matter colon-ref or point-ref, say,
+           ;;       a.b.c:func(), or a.b.c.func() will return `self' which has
+           ;;       been confirmed in the definition.
+           ;;       It's different from Lua5.2, which will return nil if you use point-ref for applying,
+           ;;       even if you define the function with colon-ref. It's RIDICULOUS!
+           ;;       No one wants to get nil from `self' in the reasonable code, unless they forget define
+           ;;       the function with colon-ref.
+           ;;       But it's reasonable to use point-ref in definition, since sometimes we need to refer `self'
+           ;;       which isn't bind to the current table. If users use point-ref for definition, the `self' may
+           ;;       be bind to the lexical variable out of the current scope. It's useful sometimes.
+           ;; NOTE: We don't have to drop `self' table here if cref is #f, since `self' will be created as global,
+           ;;       and it'll be referenced as global. All these codes are confirmed in compile time. So it won't
+           ;;       reference `self' as lexical at all, say:
+           ;;       (let (self) (list sn) (list self) ... (toplevel self) ...)
            `(let (self)
-              (list sn)
-              (if cref? (list self) `((const nil)))
+              ,(list sn)
+              ,(list self)
               ,refexp)))))
     (('local ('func-def `(id ,func) ('params p ...) body))
      `(define
