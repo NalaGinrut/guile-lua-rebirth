@@ -41,13 +41,19 @@
 ;;       'value (runtime), so we convert all arguments to 'value as convention here!
 
 (define (->stdlib-call lib prim . args)
-  `(call (@ (language lua stdlib ,lib) ,prim) ,@(fix-for-cross args)))
+  `(call (@ (language lua stdlib ,lib) ,prim) ,@(fix-for-cross args)
+         #;
+         ,@(fix-for-cross
+         `((lambda () (lambda-case ((() #f #f #f () ()) ,@args)))))))
 
 ;; TODO: how to print table and function?
 ;; TODO: should accept multi-vals return as arguments.
 (define (lua-print x)
-  (->stdlib-call 'io 'primitive:lua-print
+  (->stdlib-call 'io 'primitive:lua-print #;x
                  `(lambda () (lambda-case ((() #f #f #f () ()) ,x)))))
+
+(define (lua-detect-type x)
+  (->stdlib-call 'misc 'primitive:lua-type x))
 
 (define (emit-tree-il-from-primitive op x y)
   `(call (primitive ,op) ,x ,y))
@@ -161,23 +167,10 @@
 (define (lua-leq x y) (lua-compare '<= x y))
 (define (lua-not x) `(call (primitive not) ,x))
 
-;; NOTE: The type of type is string
-(define (lua-detect-type o)
-  (match o
-    (('const (? string?))
-     '(const "string"))
-    (('const (? number?))
-     '(const "number"))
-    (('lambda _ ...)
-     '(const "function"))
-    ('(const nil)
-     '(const "nil"))
-    (else (error 'lua-detect-type "BUG: Invalid object!" o))))
-
 ;; NOTE: built-in functions are unnecessarily to use a table for fetching, IMO...
 (define *built-in-functions*
   `(("print" . ,lua-print)
-    ("type" . lua-detect-type)))
+    ("type" . ,lua-detect-type)))
 
 (define (is-lua-builtin-func? x)
   (assoc-ref *built-in-functions* x))
