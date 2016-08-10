@@ -30,7 +30,8 @@
 
             lua-static-scope-set!
             lua-static-scope-ref
-
+            is-lexical-bind?
+            
             lua-global-set!
             lua-global-ref
             
@@ -81,10 +82,17 @@
 (define (lua-static-scope-set! e sym val)
   (lua-local-set! e sym val))
 
+;; test if it's lexical bind, include toplevel
 (define (lua-static-scope-ref e sym)
   (or (lua-local-ref e sym)
       (and (not (is-top-level? e))
            (lua-static-scope-ref (lua-env-upper-frame e) sym))))
+
+;; test if it's lexical bind, but not in toplevel
+(define (is-lexical-bind? e sym)
+  (and (not (is-top-level? e))
+       (or (lua-local-ref e sym)
+           (is-lexical-bind? (lua-env-upper-frame e) sym))))
 
 (define (lua-global-set! sym val)
   (symbol-table-set! (lua-env-symbol-table (current-top-level-environment)) sym val))
