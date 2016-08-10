@@ -358,7 +358,7 @@
               (lambda (pattern)
                 (match pattern
                   (('tb-key-set! `(id ,k) v)
-                   `(call (@ (language lua table) try-lua-table-set!)
+                   `(call (@ (language lua table) lua-table-set!)
                           (const ,tbn)
                           (lexical ,tbn ,(get-rename e tbn))
                           (const ,(string->symbol k))
@@ -418,11 +418,19 @@
           ,@(map (lambda (k v)
                    (match k
                      (`(toplevel ,name)
-                      (lua-global-set! name `((value ,v))))
+                      (lua-global-set! name `((value ,v)))
+                      `(set! ,k ,v))
                      (`(lexical ,name ,rename)
-                      (lua-static-scope-set! e name `((rename ,rename) (value ,v))))
-                     (else (error `(assign ,_vars ,_vals) "name match failed!" k)))
-                   `(set! ,k ,v))
+                      (lua-static-scope-set! e name `((rename ,rename) (value ,v)))
+                      `(set! ,k ,v))
+                     (('call '(@ (language lua table) lua-table-ref) t kk tsym)
+                      `(call (@ (language lua table) lua-table-set!)
+                             ,tsym
+                             ,t
+                             ,kk
+                             ,v)) ; table set
+                     (else (error 'assignment
+                                  (format #f "Assign ~a to ~a, name match failed" k v)))))
                  vars vals))))
     (`(local (assign ,_vars ,_vals))
      (let ((vars (fix-if-multi _vars (comp _vars e #:local-bind? #t)))
@@ -629,7 +637,7 @@
                           self-rename)
                         #f))
                 (refexp
-                 `(call (@ (language lua table) try-lua-table-set!)
+                 `(call (@ (language lua table) lua-table-set!)
                         ,(car (list-tail self (1- (length self))))
                         ,self
                         (const ,func)
