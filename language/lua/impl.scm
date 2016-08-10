@@ -161,9 +161,23 @@
 (define (lua-leq x y) (lua-compare '<= x y))
 (define (lua-not x) `(call (primitive not) ,x))
 
+;; NOTE: The type of type is string
+(define (lua-detect-type o)
+  (match o
+    (('const (? string?))
+     '(const "string"))
+    (('const (? number?))
+     '(const "number"))
+    (('lambda _ ...)
+     '(const "function"))
+    ('(const nil)
+     '(const "nil"))
+    (else (error 'lua-detect-type "BUG: Invalid object!" o))))
+
 ;; NOTE: built-in functions are unnecessarily to use a table for fetching, IMO...
 (define *built-in-functions*
-  `(("print" . ,lua-print)))
+  `(("print" . ,lua-print)
+    ("type" . lua-detect-type)))
 
 (define (is-lua-builtin-func? x)
   (assoc-ref *built-in-functions* x))

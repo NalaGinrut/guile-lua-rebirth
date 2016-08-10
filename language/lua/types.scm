@@ -13,6 +13,10 @@
 ;;  You should have received a copy of the GNU General Public License
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+;;;; --- This module is used for type checking/inference after AST was generated,
+;;;; --- Don't use it if you're not sure what are you doing.
+;;;; --- For `type' primitive of Lua, please use lua-detect-type in impl.scm
+
 (define-module (language lua types)
   #:use-module (language lua utils)
   #:use-module ((rnrs) #:select (define-record-type))
