@@ -24,7 +24,7 @@
   #:export (;; Arith operation
             lua-add lua-minus lua-multi lua-div lua-mod lua-expt
             ;; Logical operation
-            lua-lt lua-eq lua-gt lua-geq lua-leq lua-not
+            lua-lt lua-eq lua-gt lua-geq lua-leq lua-not lua-neq
 
             lua-print
             
@@ -166,6 +166,7 @@
 (define (lua-geq x y) (lua-compare '>= x y))
 (define (lua-leq x y) (lua-compare '<= x y))
 (define (lua-not x) `(call (primitive not) ,x))
+(define (lua-neq x y) (lua-not (lua-compare 'equal? x y)))
 
 ;; NOTE: built-in functions are unnecessarily to use a table for fetching, IMO...
 (define *built-in-functions*

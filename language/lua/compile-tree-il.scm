@@ -557,6 +557,8 @@
      (lua-gt (comp x e) (comp y e)))
     (`(eq ,x ,y)
      (lua-eq (comp x e) (comp y e)))
+    (`(neq ,x ,y)
+     (lua-neq (comp x e) (comp y e)))
     (`(geq ,x ,y)
      (lua-geq (comp x e) (comp y e)))
     (`(leq ,x ,y)
