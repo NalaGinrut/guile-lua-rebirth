@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014,2016
+;;  Copyright (C) 2013,2014,2016,2017
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -69,7 +69,13 @@
             in-repl?
             id->key
             ->tnp
-            ->drop-func-ref))
+            ->drop-func-ref
+            get-nearest-namespace
+            check-lua-feature
+            enable-lua-feature
+            enable-issue1
+            enable-guile-lua-extension
+            is-os-env-set?))
 
 (define (location x)
   (and (pair? x)
@@ -264,3 +270,24 @@
   (match ns
     (('namespace p _) p)
     (else (error '->drop-func-ref "BUG: Shouldn't be here!" ns))))
+
+(define (get-nearest-namespace self)
+  (car (list-tail self (1- (length self)))))
+
+(define *lua-features*
+  '(ISSUE-1 . #f))
+(define (check-lua-feature f)
+  (assoc-ref *lua-features* f))
+(define* (enable-lua-feature f #:optional (v #t))
+  (assoc-set! *lua-features* f v))
+
+(define (enable-issue1)
+  (lua-global-set! 'GUILE_LUA_ISSUE1 '(const #t))
+  (enable-lua-feature 'ISSUE-1))
+
+(define (enable-guile-lua-extension)
+  (lua-global-set! 'GUILE_LUA_EXTENSION '(const #t))
+  (enable-lua-feature 'guile-lua-extension))
+
+(define* (is-os-env-set? name #:optional (v "yes"))
+   (string=? (getenv name) v))

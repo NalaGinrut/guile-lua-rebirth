@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014,2016
+;;  Copyright (C) 2013,2014,2016,2017
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -28,7 +28,8 @@
   #:export (compile-tree-il))
 
 (define (lua-init)
-  #t) ; nothing to do yet.
+  (when (is-os-env-set? "GUILE_LUA_ISSUE1") (enable-issue1))
+  (when (is-os-env-set? "GUILE_LUA_EXTENSION" (enable-guile-lua-extension))))
 
 ;; NOTE: For Guile-Lua-rebirth, we combine Lua and Scheme environment as possible,
 ;;       then you may define a var in Scheme, but reference it in Lua.
@@ -320,7 +321,7 @@
                        env))) ; end (->lambda (->letrec ... break-loop
      (lambda () ,(->lambda env ((kb)) '(void))))) ; In Lua, the `for' statement doesn't return anything, so we just return unspecified value.
 
-(define *special-var* '(self))
+(define *special-var* '(self _G))
 
 ;; for emacs:
 ;; (put 'match 'scheme-indent-function 1)
@@ -590,23 +591,34 @@
                            (comp x e)
                            (list (comp x e))))))))))
     (('func-colon-call ('namespace ns ...) ('args args ...))
+     (define (gen-args-list)
+       (let ((x (car args)))
+         (if (multi-exps? x)
+             (comp x e)
+             (list (comp x e)))))
      (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
        (let* ((self (comp (->drop-func-ref `(namespace ,@ns)) e))
               (tv `(call (@ (language lua table) lua-table-ref)
                          ,self
                          (const ,func)
-                         ,(car (list-tail self (1- (length self))))))
+                         ,(get-nearest-namespace self)))
               (self-rename `(call (toplevel car) ,tv))
               (tf `(call (toplevel cdr) ,tv))
               (cf (->call
                    func
                    (lambda (_) tf)
-                   (if (null? args)
-                       args
-                       (let ((x (car args)))
-                         (if (multi-exps? x)
-                             (comp x e)
-                             (list (comp x e))))))))
+                   (if (check-lua-feature 'ISSUE-1)
+                       (if (null? args)
+                           args
+                           (gen-args-list))
+                       ;; The original Lua colon-ref, passing `self' as the first argument.
+                       ;; This argument is hidden since it doesn't apppear in users code directly.
+                       ;; The hiddent parameter has already been inserted when defining the Lua function.
+                       ;; We still check if the first parameter name is `self' here, if it's false, then
+                       ;; there's fatal bug.
+                       (if (null? args)
+                           (list self)
+                           (cons self (gen-args-list)))))))
          cf)))
     (('func-call ('namespace ns ...) ('args args ...))
      (let ((self (comp (->drop-func-ref `(namespace ,@ns)) e)))
@@ -618,7 +630,7 @@
                    (call (@ (language lua table) lua-table-ref)
                          ,self
                          (const ,f)
-                         ,(car (list-tail self (1- (length self)))))))
+                         ,(get-nearest-namespace self))))
           (if (null? args)
               args
               (let ((x (car args)))
@@ -635,12 +647,12 @@
        (let-values (((cref? func) (->table-ref-func `(namespace ,@ns))))
          (let* ((sn (if cref?
                         (let ((self-rename (newsym 'self)))
-                          (lua-static-scope-set! e 'self `((rename ,self-rename) (value (const nil))))
+                          (lua-static-scope-set! e 'self `((rename ,self-rename) (value ,self)))
                           self-rename)
                         #f))
                 (refexp
                  `(call (@ (language lua table) lua-table-set!)
-                        ,(car (list-tail self (1- (length self))))
+                        ,(get-nearest-namespace self)
                         ,self
                         (const ,func)
                         (call (toplevel cons)
@@ -648,8 +660,12 @@
                               (lambda ()
                                 ,(->lambda
                                   e
-                                  (,(extract-ids p))
+                                  (,@(if (check-lua-feature 'ISSUE-1)
+                                         '(self)
+                                         '())
+                                   ,(extract-ids p))
                                   (comp body e)))))))
+           ;; If you enabled ISSUE-1 fix:
            ;; NOTE: Yes, we changed something from the original Lua.
            ;;       No matter colon-ref or point-ref, say,
            ;;       a.b.c:func(), or a.b.c.func() will return `self' which has
@@ -663,12 +679,17 @@
            ;;       be bind to the lexical variable out of the current scope. It's useful sometimes.
            ;; NOTE: We don't have to drop `self' table here if cref is #f, since `self' will be created as global,
            ;;       and it'll be referenced as global. All these codes are confirmed in compile time. So it won't
-           ;;       reference `self' as lexical at all, say:
+           ;;       reference `self' as lexical at all, say, the generated tree-il will be:
            ;;       (let (self) (list sn) (list self) ... (toplevel self) ...)
-           `(let (self)
-              ,(list sn)
-              ,(list self)
-              ,refexp)))))
+           ;;       Although `self' was bound in `let', but it's always referenced with `toplevel' command.
+           (if (check-lua-feature 'ISSUE-1)
+               `(let (self)
+                  ,(list sn)
+                  ,(list self)
+                  ,refexp)
+               ;; NOTE: The original Lua colon-ref, which means to refer `self' without binding to the nearest
+               ;;       environment, but pass it as a hidden argument.
+               refexp)))))
     (('local ('func-def `(id ,func) ('params p ...) body))
      `(define
         (lexical ,(string->symbol func))
