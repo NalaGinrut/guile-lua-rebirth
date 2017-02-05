@@ -72,10 +72,7 @@
             ->drop-func-ref
             get-nearest-namespace
             check-lua-feature
-            enable-lua-feature
-            enable-issue1
-            enable-guile-lua-extension
-            is-os-env-set?))
+            enable-lua-feature))
 
 (define (location x)
   (and (pair? x)
@@ -275,19 +272,11 @@
   (car (list-tail self (1- (length self)))))
 
 (define *lua-features*
-  '(ISSUE-1 . #f))
+  '((ISSUE-1 . #f)
+    (guile-lua-extension . #f)))
 (define (check-lua-feature f)
-  (assoc-ref *lua-features* f))
+  (let ((ret (assoc-ref *lua-features* f)))
+    (format #t "~a is ~a~%" f ret)
+    ret))
 (define* (enable-lua-feature f #:optional (v #t))
   (assoc-set! *lua-features* f v))
-
-(define (enable-issue1)
-  (lua-global-set! 'GUILE_LUA_ISSUE1 '(const #t))
-  (enable-lua-feature 'ISSUE-1))
-
-(define (enable-guile-lua-extension)
-  (lua-global-set! 'GUILE_LUA_EXTENSION '(const #t))
-  (enable-lua-feature 'guile-lua-extension))
-
-(define* (is-os-env-set? name #:optional (v "yes"))
-   (string=? (getenv name) v))

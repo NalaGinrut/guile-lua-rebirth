@@ -27,9 +27,29 @@
   #:use-module (srfi srfi-11)
   #:export (compile-tree-il))
 
+(define (enable-issue1)
+  (format (current-error-port) "ISSUE-1 fix enabled!~%")
+  (lua-global-set! 'GUILE_LUA_ISSUE1 '((value (const #t))))
+  (enable-lua-feature 'ISSUE-1))
+
+(define (enable-guile-lua-extension)
+  (format (current-error-port) "Guile Lua extension enabled!~%")
+  (lua-global-set! 'GUILE_LUA_EXTENSION '((value (const #t))))
+  (enable-lua-feature 'guile-lua-extension))
+
+(define* (is-os-env-set? name #:optional (v "yes"))
+  (cond
+   ((getenv name)
+    => (lambda (ev) (string= ev v)))
+   (else #f)))
+
 (define (lua-init)
-  (when (is-os-env-set? "GUILE_LUA_ISSUE1") (enable-issue1))
-  (when (is-os-env-set? "GUILE_LUA_EXTENSION" (enable-guile-lua-extension))))
+  (if (is-os-env-set? "GUILE_LUA_ISSUE1")
+      (enable-issue1)
+      (format (current-error-port) "ISSUE-1 fix disabled!~%"))
+  (if (is-os-env-set? "GUILE_LUA_EXTENSION")
+      (enable-guile-lua-extension)
+      (format (current-error-port) "Guile Lua extension disabled!~%")))
 
 ;; NOTE: For Guile-Lua-rebirth, we combine Lua and Scheme environment as possible,
 ;;       then you may define a var in Scheme, but reference it in Lua.
@@ -143,15 +163,21 @@
     (('multi-exps rest ...) (display "multi-exps!\n") #t)
     (else (display "not multi-exps!\n") #f)))
 
-(define (extract-ids ids)
-  (map (lambda (x)
-         (match x
-           ('(void) 'void)
-           (`(id ,id) (string->symbol id))
-           (else (error extract-ids "Invalid ids pattern!" x))))
-       (if (multi-exps? (car ids))
-           (cdar ids)
-           (car ids))))
+(define* (extract-ids ids #:optional (no-void? #f))
+  (filter-map
+   (lambda (x)
+     (match x
+       ('(void)
+        (if no-void?
+            #f
+            (if (check-lua-feature 'ISSUE-1)
+                'void
+                #f)))
+       (`(id ,id) (string->symbol id))
+       (else (error extract-ids "Invalid ids pattern!" x))))
+   (if (multi-exps? (car ids))
+       (cdar ids)
+       (car ids))))
 
 (define *default-toplevel-module* (resolve-module '(guile-user)))
 
@@ -591,13 +617,12 @@
                            (comp x e)
                            (list (comp x e))))))))))
     (('func-colon-call ('namespace ns ...) ('args args ...))
-     (define (gen-args-list)
-       (let ((x (car args)))
-         (if (multi-exps? x)
-             (comp x e)
-             (list (comp x e)))))
      (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
-       (let* ((self (comp (->drop-func-ref `(namespace ,@ns)) e))
+       (let* ((args-list  (let ((x (car args)))
+                           (if (multi-exps? x)
+                               (comp x e)
+                               (list (comp x e)))))
+              (self (comp (->drop-func-ref `(namespace ,@ns)) e))
               (tv `(call (@ (language lua table) lua-table-ref)
                          ,self
                          (const ,func)
@@ -610,7 +635,7 @@
                    (if (check-lua-feature 'ISSUE-1)
                        (if (null? args)
                            args
-                           (gen-args-list))
+                           args-list)
                        ;; The original Lua colon-ref, passing `self' as the first argument.
                        ;; This argument is hidden since it doesn't apppear in users code directly.
                        ;; The hiddent parameter has already been inserted when defining the Lua function.
@@ -618,7 +643,7 @@
                        ;; there's fatal bug.
                        (if (null? args)
                            (list self)
-                           (cons self (gen-args-list)))))))
+                           (cons self args-list))))))
          cf)))
     (('func-call ('namespace ns ...) ('args args ...))
      (let ((self (comp (->drop-func-ref `(namespace ,@ns)) e)))
@@ -650,6 +675,11 @@
                           (lua-static-scope-set! e 'self `((rename ,self-rename) (value ,self)))
                           self-rename)
                         #f))
+                (zz (pk (append
+                         (if (check-lua-feature 'ISSUE-1)
+                             '()
+                             '(self)) ; the original Lua should pass `self' as hidden argument
+                         (extract-ids p (check-lua-feature 'ISSUE-1)))))
                 (refexp
                  `(call (@ (language lua table) lua-table-set!)
                         ,(get-nearest-namespace self)
@@ -660,10 +690,11 @@
                               (lambda ()
                                 ,(->lambda
                                   e
-                                  (,@(if (check-lua-feature 'ISSUE-1)
-                                         '(self)
-                                         '())
-                                   ,(extract-ids p))
+                                  (,(append
+                                     (if (check-lua-feature 'ISSUE-1)
+                                         '()
+                                         '(self))
+                                     (extract-ids p (check-lua-feature 'ISSUE-1))))
                                   (comp body e)))))))
            ;; If you enabled ISSUE-1 fix:
            ;; NOTE: Yes, we changed something from the original Lua.
