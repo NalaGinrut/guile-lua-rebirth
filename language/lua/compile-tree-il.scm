@@ -204,6 +204,7 @@
 (define (->var var) (->scope var is-toplevel-var?))
 
 (define (->call f trans args)
+  (DEBUG "->call ~a ~a ~a~%" f trans args)
   (cond
    ((null? args) `(call ,(trans f)))
    (else `(call ,(trans f) ,@args))))
@@ -229,7 +230,7 @@
 ;; (lambda () (lambda-case ((req opt rest kw inits gensyms) body) [alternate]))
 ;; NOTE: you have to use (lambda () ...) to create a closure first, than define the lambda-case in it.
 ;; e.g:
-;; (define func (lambda () (lambda-case (((o) #f #f #f () (o123)) (call (toplevel +) (const 1) (lexical o o123)))))
+;; (define func (lambda () (lambda-case (((o) #f #f #f () (o123)) (call (toplevel +) (const 1) (lexical o o123))))))
 ;; o123 matters, so they have to be the same.
 ;; (func 2) ==> 3
 ;; (define func (lambda () (lambda-case (((x y) #f #f #f () (x123 y321)) (call (toplevel +) (lexical x x123) (lexical y y321))))))
@@ -264,10 +265,11 @@
                                     ('void #f)
                                     ((? symbol? id)
                                      (let ((ss (newsym id))
-                                           (ssv (lua-static-scope-ref e id)))
+                                           (ssv (lua-local-ref e id)))
                                        ;;(format #t "->lambda[1]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
-                                             (lua-static-scope-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
+                                         (DEBUG "Changing ~a to ~a~%" id ss)
+                                             (lua-local-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
                                     (else (error "->lambda: [1] Invalid id pattern!" s))))
                                 `arg `arg* ...)))
@@ -282,10 +284,10 @@
                                     ('void #f)
                                     ((? symbol? id)
                                      (let ((ss (newsym id))
-                                           (ssv (lua-static-scope-ref e id)))
+                                           (ssv (lua-local-ref e id)))
                                        ;;(format #t "->lambda[2]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
-                                             (lua-static-scope-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
+                                             (lua-local-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
                                     (else (error "->lambda: [2] Invalid id pattern!" s))))
                                 `(,@`arg ,@`arg* ... args))))
@@ -618,68 +620,78 @@
                            (list (comp x e))))))))))
     (('func-colon-call ('namespace ns ...) ('args args ...))
      (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
-       (let* ((args-list  (let ((x (car args)))
-                           (if (multi-exps? x)
-                               (comp x e)
-                               (list (comp x e)))))
-              (self (comp (->drop-func-ref `(namespace ,@ns)) e))
+       (let* ((self (comp (->drop-func-ref `(namespace ,@ns)) e))
+              (args-list (cond
+                          ((null? args) args)
+                          ((multi-exps? (car args)) (comp (car args) e))
+                          (else (list (comp (car args) e)))))
+              ;; The original Lua colon-ref, passing `self' as the first argument.
+              ;; This argument is hidden since it doesn't apppear in users code directly.
+              ;; The hidden parameter has already been inserted when defining the Lua function.
+              ;; We still check if the first parameter name is `self' here, if it's false, then
+              ;; there's fatal bug.
+              (nargs-list (if (check-lua-feature 'ISSUE-1)
+                              args-list
+                              (cons self args-list)))              
+              ;; NOTE: tf is to get the function from self which is actually a table in Lua
               (tv `(call (@ (language lua table) lua-table-ref)
                          ,self
                          (const ,func)
                          ,(get-nearest-namespace self)))
               (self-rename `(call (toplevel car) ,tv))
-              (tf `(call (toplevel cdr) ,tv))
-              (cf (->call
-                   func
-                   (lambda (_) tf)
-                   (if (check-lua-feature 'ISSUE-1)
-                       (if (null? args)
-                           args
-                           args-list)
-                       ;; The original Lua colon-ref, passing `self' as the first argument.
-                       ;; This argument is hidden since it doesn't apppear in users code directly.
-                       ;; The hiddent parameter has already been inserted when defining the Lua function.
-                       ;; We still check if the first parameter name is `self' here, if it's false, then
-                       ;; there's fatal bug.
-                       (if (null? args)
-                           (list self)
-                           (cons self args-list))))))
-         cf)))
+              (tf `(call (toplevel cdr) ,tv)))
+        (->call func (lambda (_) tf) nargs-list))))
     (('func-call ('namespace ns ...) ('args args ...))
-     (let ((self (comp (->drop-func-ref `(namespace ,@ns)) e)))
-       (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
-         (->call
-          func
-          (lambda (f)
-            `(call (toplevel cdr)
-                   (call (@ (language lua table) lua-table-ref)
-                         ,self
-                         (const ,f)
-                         ,(get-nearest-namespace self))))
-          (if (null? args)
-              args
-              (let ((x (car args)))
-                (if (multi-exps? x)
-                    (comp x e)
-                    (list (comp x e)))))))))
+     (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
+       (let* ((self (comp (->drop-func-ref `(namespace ,@ns)) e))
+              (args-list (cond
+                          ((null? args) args)
+                          ((multi-exps? (car args)) (comp (car args) e))
+                          (else (list (comp (car args) e)))))
+              (nargs-list (cons (if (check-lua-feature 'ISSUE-1)
+                                    self ; pass in the real self
+                                    (comp '(id "self") e)) ; pass the value of `self' var
+                                args-list))
+              ;; NOTE: tf is to get the function from self which is actually a table in Lua
+              (tf `(call (toplevel cdr)
+                         (call (@ (language lua table) lua-table-ref)
+                               ,self
+                               (const ,func)
+                               ,(get-nearest-namespace self)))))
+        (->call func (lambda (_) tf) nargs-list))))
     (('func-def `(id ,func) ('params p ...) body)
-     `(define
-        ,(string->symbol func)
-        (lambda ((name . ,(string->symbol func)))
-          ,(->lambda e (,(extract-ids p)) (comp body e)))))
+     (let ((new-env (new-scope e)))
+       `(define
+          ,(string->symbol func)
+          (lambda ((name . ,(string->symbol func)))
+            ,(->lambda e (,(extract-ids p)) (comp body new-env))))))
     (('func-def ('namespace ns ...) ('params p ...) body)
      (let ((self (comp (->drop-func-ref `(namespace ,@ns)) e)))
        (let-values (((cref? func) (->table-ref-func `(namespace ,@ns))))
          (let* ((sn (if cref?
+                        ;; if colon-ref, self must be bound to `self' variable.
                         (let ((self-rename (newsym 'self)))
-                          (lua-static-scope-set! e 'self `((rename ,self-rename) (value ,self)))
+                          (lua-static-scope-set! e 'self
+                                                 `((rename ,self-rename) (value ,self)))
                           self-rename)
+                        ;; point-ref, in this case, the first arg must be always self
+                        ;; but never bound to `self' variable inexcplictly. That means
+                        ;; `self' variable would be `nil' in the most general case.
                         #f))
-                (zz (pk (append
-                         (if (check-lua-feature 'ISSUE-1)
-                             '()
-                             '(self)) ; the original Lua should pass `self' as hidden argument
-                         (extract-ids p (check-lua-feature 'ISSUE-1)))))
+                (zz (append
+                     (if (check-lua-feature 'ISSUE-1)
+                         '()
+                         '(self)) ; the original Lua should pass `self' as hidden argument
+                     (extract-ids p (check-lua-feature 'ISSUE-1))))
+                ;; NOTE: This new env is only for the new lambda scope, or we can't record
+                ;;       `self' correctly. Don't use it in previous context/exprs, it should
+                ;;       absoultely clean before pass into the lambda. Although lambda has its
+                ;;       own new scope in the low-level, we still need this new env to record
+                ;;       things before the Lua code compiled to tree-il.
+                ;; NOTE: We can't create this new env in ->lambda, since the exprs in body should
+                ;;       call `comp' with this new env. And we have no chance to do it within,
+                ;;       since the macro omits all the exprs to "body ...".                
+                (new-env (new-scope e))
                 (refexp
                  `(call (@ (language lua table) lua-table-set!)
                         ,(get-nearest-namespace self)
@@ -689,13 +701,17 @@
                               (const ,sn)
                               (lambda ()
                                 ,(->lambda
-                                  e
+                                  new-env
                                   (,(append
                                      (if (check-lua-feature 'ISSUE-1)
                                          '()
-                                         '(self))
+                                         ;; NOTE: If colon-ref, then no `self' as arg explicitly.
+                                         ;;       Because the self MAY be applied as an arg, so we
+                                         ;;       always put the first parameter as `_' to prevent
+                                         ;;       the parity inconsistent.
+                                         (if cref? '(self) '(_)))
                                      (extract-ids p (check-lua-feature 'ISSUE-1))))
-                                  (comp body e)))))))
+                                  (comp body new-env)))))))
            ;; If you enabled ISSUE-1 fix:
            ;; NOTE: Yes, we changed something from the original Lua.
            ;;       No matter colon-ref or point-ref, say,
@@ -720,14 +736,16 @@
                   ,refexp)
                ;; NOTE: The original Lua colon-ref, which means to refer `self' without binding to the nearest
                ;;       environment, but pass it as a hidden argument.
-               refexp)))))
+               (pk "refexp0: " refexp))))))
     (('local ('func-def `(id ,func) ('params p ...) body))
-     `(define
-        (lexical ,(string->symbol func))
-        (lambda ((name . ,(string->symbol func)))
-          ,(->lambda e (,(extract-ids p)) (comp body e)))))
+     (let ((new-env (new-scope e)))
+       `(define
+          (lexical ,(string->symbol func))
+          (lambda ((name . ,(string->symbol func)))
+            ,(->lambda new-env (,(extract-ids p)) (comp body new-env))))))
     (('anon-func-def ('params p ...) body)
-     `(lambda () ,(->lambda e (,(extract-ids p)) (comp body e))))
+     (let ((new-env (new-scope e)))
+       `(lambda () ,(->lambda new-env (,(extract-ids p)) (comp body new-env)))))
     (('return vals ...)
      (->return (if (null? vals) vals (comp (car vals) e))))
 
