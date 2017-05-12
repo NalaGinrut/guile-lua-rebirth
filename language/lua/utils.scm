@@ -72,7 +72,8 @@
             ->drop-func-ref
             get-nearest-namespace
             check-lua-feature
-            enable-lua-feature))
+            enable-lua-feature
+            DEBUG))
 
 (define (location x)
   (and (pair? x)
@@ -280,3 +281,6 @@
     ret))
 (define* (enable-lua-feature f #:optional (v #t))
   (assoc-set! *lua-features* f v))
+
+(define (DEBUG fmt . args)
+  (apply format #t fmt args))
