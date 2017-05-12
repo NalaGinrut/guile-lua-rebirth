@@ -1,4 +1,4 @@
-;;  Copyright (C) 2014,2015,2016
+;;  Copyright (C) 2014,2015,2016,2017
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -31,6 +31,9 @@
             lua-table-set!
             lua-table-ref))
 
+;; TODO: Add a printer, these info should be printed:
+;; 1. hash size (just print hash table object)
+;; 2. array size/max
 (define-record-type <lua-table>
   (%make-lua-table hash-part array-part array-max)
   is-lua-table?
