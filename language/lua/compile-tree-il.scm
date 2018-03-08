@@ -1,4 +1,4 @@
-;;  Copyright (C) 2013,2014,2016,2017
+;;  Copyright (C) 2013,2014,2016,2017,2018
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -241,7 +241,7 @@
 ;; 1. (lambda () 1)
 ;; e.g: (lambda () (lambda-case ((() #f #f #f () ()) (const 1))))
 ;;
-;; 2. (lambda (x) 3) 
+;; 2. (lambda (x) 3)
 ;; e.g: (lambda () (lambda-case (((x) #f #f #f () (x1)) (const 3))))
 ;;
 ;; 3. (lambda (. y) 3)
@@ -269,7 +269,7 @@
                                        ;;(format #t "->lambda[1]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
                                          (DEBUG "Changing ~a to ~a~%" id ss)
-                                             (lua-local-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
+                                         (lua-local-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
                                     (else (error "->lambda: [1] Invalid id pattern!" s))))
                                 `arg `arg* ...)))
@@ -287,7 +287,7 @@
                                            (ssv (lua-local-ref e id)))
                                        ;;(format #t "->lambda[2]: Add `~a' to ENV~%" ss)
                                        (when (not (assoc-ref ssv 'rename))
-                                             (lua-local-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
+                                         (lua-local-set! e id (list `(rename ,ss) (if ssv ssv '(value (const nil))))))
                                        ss))
                                     (else (error "->lambda: [2] Invalid id pattern!" s))))
                                 `(,@`arg ,@`arg* ... args))))
@@ -307,47 +307,51 @@
 (define (rep/cnd env cnd step body)
   ;; NOTE: To implement loop-break, we setup two continuations:
   ;; 1. "break-loop" continuation for jumping out of all mess
-  ;; 2. "continue-loop" continuation for jumping back to infinite loop
-  `(prompt #f
-     (lexical %break-tag ,(get-rename env '%break-tag))
-     (lambda ()
-       ,(->lambda
-         env ()
-         (->letrec/rep '(%break-loop)
-                       `((lambda ((name . %break-loop))
-                           ,(->lambda
-                             env ()
-                             `(prompt #f
-                                (lexical %continue-tag ,(get-rename env '%continue-tag))
-                                (lambda ()
-                                  ,(->lambda
-                                    env ()
-                                    (->letrec/rep '(%continue-loop)
-                                                  `((lambda ((name . %continue-loop))
-                                                      ,(->lambda
-                                                        env ()
-                                                        `(begin
-                                                           (if (call (primitive not) ,cnd)
-                                                               (void)
-                                                               (begin
-                                                                 ,(comp body env) ; do the block
-                                                                 ,step
-                                                                 (call (lexical %continue-loop ,(get-rename env '%continue-loop)))))))))
-                                                  `(call (lexical %continue-loop ,(get-rename env '%continue-loop))) ; continue to loop
-                                                  env))) ; end (->lambda (->letrec ... continue-loop
-                                (lambda ()
-                                  ,(->lambda
-                                    env ((kc))
-                                    ;; NOTE: If this prompt handler were triggered, it meant "abort" happened somewhere in the continue-loop.
-                                    ;;       Then we should call break-loop for jumping out of continue-loop. This will abandon the current
-                                    ;;       loop and setup a new loop with the current context.
-                                    `(begin
-                                       ,step
-                                       (call (lexical break-loop ,(get-rename env '%break-loop)))))))))) ; end (->lambda ... call-with-prompt
-                       ;; break-loop body, which is used to help to setup a new continue-loop with the current environment.
-                       `(call (lexical %break-loop ,(get-rename env '%break-loop)))
-                       env))) ; end (->lambda (->letrec ... break-loop
-     (lambda () ,(->lambda env ((kb)) '(void))))) ; In Lua, the `for' statement doesn't return anything, so we just return unspecified value.
+  ;; 2. "continue-loop" continuation for jumping back to the next round loop
+  `(prompt
+    #f
+    (lexical %break-tag ,(get-rename env '%break-tag))
+    (lambda ()
+      ,(->lambda
+        env ()
+        (->letrec/rep
+         '(%break-loop)
+         `((lambda ((name . %break-loop))
+             ,(->lambda
+               env ()
+               `(prompt
+                 #f
+                 (lexical %continue-tag ,(get-rename env '%continue-tag))
+                 (lambda ()
+                   ,(->lambda
+                     env ()
+                     (->letrec/rep
+                      '(%continue-loop)
+                      `((lambda ((name . %continue-loop))
+                          ,(->lambda
+                            env ()
+                            `(begin
+                               (if (call (primitive not) ,cnd)
+                                   (void)
+                                   (begin
+                                     ,(comp body env) ; do the block
+                                     ,step
+                                     (call (lexical %continue-loop ,(get-rename env '%continue-loop)))))))))
+                      `(call (lexical %continue-loop ,(get-rename env '%continue-loop))) ; continue to loop
+                      env))) ; end (->lambda (->letrec ... continue-loop
+                 (lambda ()
+                   ,(->lambda
+                     env ((kc))
+                     ;; NOTE: If this prompt handler were triggered, it meant "abort" happened somewhere in the continue-loop.
+                     ;;       Then we should call break-loop for jumping out of continue-loop. This will abandon the current
+                     ;;       loop and setup a new loop with the current context.
+                     `(begin
+                        ,step
+                        (call (lexical break-loop ,(get-rename env '%break-loop)))))))))) ; end (->lambda ... call-with-prompt
+         ;; break-loop body, which is used to help to setup a new continue-loop with the current environment.
+         `(call (lexical %break-loop ,(get-rename env '%break-loop)))
+         env))) ; end (->lambda (->letrec ... break-loop
+    (lambda () ,(->lambda env ((kb)) '(void))))) ; In Lua, the `for' statement doesn't return anything, so we just return unspecified value.
 
 (define *special-var* '(self _G))
 
@@ -594,7 +598,7 @@
      (lua-leq (comp x e) (comp y e)))
     (`(not ,x)
      (lua-not (comp x e)))
-    
+
     ;; functions
     (('func-call ('id func) ('args args ...))
      ;;(format #t "func-call: ~a~%" args)
@@ -632,7 +636,7 @@
               ;; there's fatal bug.
               (nargs-list (if (check-lua-feature 'ISSUE-1)
                               args-list
-                              (cons self args-list)))              
+                              (cons self args-list)))
               ;; NOTE: tf is to get the function from self which is actually a table in Lua
               (tv `(call (@ (language lua table) lua-table-ref)
                          ,self
@@ -640,7 +644,7 @@
                          ,(get-nearest-namespace self)))
               (self-rename `(call (toplevel car) ,tv))
               (tf `(call (toplevel cdr) ,tv)))
-        (->call func (lambda (_) tf) nargs-list))))
+         (->call func (lambda (_) tf) nargs-list))))
     (('func-call ('namespace ns ...) ('args args ...))
      (let-values (((_ func) (->table-ref-func `(namespace ,@ns))))
        (let* ((self (comp (->drop-func-ref `(namespace ,@ns)) e))
@@ -658,7 +662,7 @@
                                ,self
                                (const ,func)
                                ,(get-nearest-namespace self)))))
-        (->call func (lambda (_) tf) nargs-list))))
+         (->call func (lambda (_) tf) nargs-list))))
     (('func-def `(id ,func) ('params p ...) body)
      (let ((new-env (new-scope e)))
        `(define
@@ -690,7 +694,7 @@
                 ;;       things before the Lua code compiled to tree-il.
                 ;; NOTE: We can't create this new env in ->lambda, since the exprs in body should
                 ;;       call `comp' with this new env. And we have no chance to do it within,
-                ;;       since the macro omits all the exprs to "body ...".                
+                ;;       since the macro omits all the exprs to "body ...".
                 (new-env (new-scope e))
                 (refexp
                  `(call (@ (language lua table) lua-table-set!)

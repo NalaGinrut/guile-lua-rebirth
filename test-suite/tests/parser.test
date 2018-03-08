@@ -1,6 +1,6 @@
 ;;  Lua parser tests
 ;;  -*-  indent-tabs-mode:nil; coding: utf-8 -*-
-;;  Copyright (C) 2014,2016
+;;  Copyright (C) 2014,2016,2018
 ;;      "Mu Lei" known as "NalaGinrut" <NalaGinrut@gmail.com>
 ;;  This file is free software: you can redistribute it and/or modify
 ;;  it under the terms of the GNU General Public License as published by
@@ -32,55 +32,66 @@
    a b))
 
 (define *precedence-tests*
-  `(("1+2*3/4-5" 
-     . (minus 
-        (add (number 1) 
-             (div 
+  `(;; 0
+    ("1+2*3/4-5"
+     . (minus
+        (add (number 1)
+             (div
               (multi (number 2) (number 3))
               (number 4)))
         (number 5)))
+    ;; 1
     ("(1+2)*3/4-5"
-     . (minus 
-        (div 
-         (multi 
+     . (minus
+        (div
+         (multi
           (add (number 1) (number 2))
           (number 3))
          (number 4))
         (number 5)))
+    ;; 2
     ("a+i < b/2+1"
-     . (lt (add (id "a") (id "i")) 
+     . (lt (add (id "a") (id "i"))
            (add (div (id "b") (number 2))
                 (number 1))))
+    ;; 3
     ("1+ false or 3"
      ;; NOTE:
      ;; Intended wrong parsing, correct result is (1+false) or 3",
      ;; but such wrong situation possibly occurs, so we test it.
      ;; If it doesn't occur, another potential bug exists.
      . (or (add (number 1) (boolean false)) (number 3)))
+    ;; 4
     ("5+x^2*8"
      . (add (number 5)
             (multi
              (expt (id "x") (number 2))
              (number 8))))
+    ;; 5
     ("a < y and y <= z"
      . (and (lt (id "a") (id "y"))
             (leq (id "y") (id "z"))))
+    ;; 6
     ("-x^2"
      . (uminus (expt (id "x") (number 2))))
+    ;; 7
     ("x^y^z" ; expt in sequence
-     . (expt 
+     . (expt
         (expt (id "x") (id "y"))
         (id "z")))
+    ;; 8
     ("not x ^ 2" ; expt higher than not
      . (not (expt (id "x") (number 2))))
+    ;; 9
     ("#'123'"
      . (hash (string "123")))
-    ("#'123' ^ 2" ; intended wrong exp! 
-     ;; expt higher than hash
+    ;; 10
+    ("#'123' ^ 2" ; intended wrong exp!
+     ;; expt is higher than hash
      ;; so the result is to get length from a number which should be wrong.
      ;; ERRMSG: "attempt to perform arithmetic on a string value!"
      . (hash (expt (string "123") (number 2))))
-    
+
     ))
 
 (define *expr-tests*
@@ -90,99 +101,112 @@
     ;;("1+2,3+4"
     ;; . (begin (add (number 1) (number 2)) (add (number 3) (number 4))))
     ;;("1+2,3+4 and false,true"
-    ;; . (begin (add (number 1) (number 2)) 
+    ;; . (begin (add (number 1) (number 2))
     ;;          (begin (and (add (number 3) (number 4))
     ;;                      (boolean false))
     ;;                 (boolean true))))
+    ;; 0
     ("1+2+4*3-2-1-5/8"
-     . (minus 
-        (minus 
-         (minus 
-          (add 
-           (add (number 1) 
+     . (minus
+        (minus
+         (minus
+          (add
+           (add (number 1)
                 (number 2))
            (multi (number 4) (number 3)))
           (number 2))
          (number 1))
-        (div (number 5) 
+        (div (number 5)
              (number 8))))
+    ;; 1
     ("nil" . (marker nil))
     ;; ("a = b + c
-     ;; (print or io.write)('done')"
-     ;; NOTE: According to the manual 5.2
-     ;; The current parser always sees such constructions in the first way,
-     ;; interpreting the open parenthesis as the start of the arguments to a call. 
-     ;;. ())
+    ;; (print or io.write)('done')"
+    ;; NOTE: According to the manual 5.2
+    ;; The current parser always sees such constructions in the first way,
+    ;; interpreting the open parenthesis as the start of the arguments to a call.
+    ;;. ())
+    ;; 2
     ("\"this is string\"" . (string "this is string"))
+    ;; 3
     ("'this is string'" . (string "this is string"))
+    ;; 4
     ("a['xx']['x']+2"
      . (add (array (array (id "a") (string "xx")) (string "x")) (number 2)))))
 
 (define *stat-tests*
-  `(("while a<2 do print(a) a=a-1 end"
-     . (while (lt (id "a") (number 2))
-         do
-         (do-block
-          (scope
-           (begin 
-             (func-call (id "print") (args (id "a")))
-             (assign (id "a") 
-                     (minus (id "a") (number 1))))))))
+  `(;; 0
+    ("while a<2 do print(a) a=a-1 end"
+     . (rep
+        (scope
+         (while (lt (id "a") (number 2))
+           do
+           (do-block
+            (scope
+             (begin
+               (func-call (id "print") (args (id "a")))
+               (assign (id "a")
+                       (minus (id "a") (number 1))))))))))
+    ;; 1
     ("do a=1+2 print(a) end"
      . (do-block
         (scope
          (begin
            (assign (id "a") (add (number 1) (number 2)))
            (func-call (id "print") (args (id "a")))))))
+    ;; 2
     ("for a=1,10 do print(a) end"
      . (rep
         (scope
-         (for 
-          (assign (id "a") (range (number 1) (number 10))))
-         (do-block
-          (scope
-           (func-call (id "print") (args (id "a"))))))))
-    ("for a=1,10,2 do print(a) end"
-     . (rep 
-        (scope
-         (for (assign (id "a") (range (number 1) (number 10) (number 2))))
-         (do-block (scope (func-call (id "print") (args (id "a"))))))))
+         (for (assign (id "a") (range (number 1) (number 10)))
+           (do-block
+            (scope
+             (func-call (id "print") (args (id "a")))))))))
+    ;; 3
     ("for a,b in pairs({x=1,y=2}) do print(a) print(b) end"
-     . (rep 
-        (scope 
-         (for 
-          (assign ((id "a") (id "b")) 
-                  (func-call (id "pairs")
-                        (args (table (tb-key-set! (id "x") (number 1))
-                                     (tb-key-set! (id "y") (number 2)))))))
-         (do-block
-          (scope
-           (begin (func-call (id "print") (args (id "a"))) 
-                  (func-call (id "print") (args (id "b")))))))))
+     . (rep
+        (scope
+         (for (assign (multi-exps (id "a") (id "b"))
+                      (func-call (id "pairs")
+                                 (args (table (tb-key-set! (id "x") (number 1))
+                                              (tb-key-set! (id "y") (number 2))))))
+           (do-block
+            (scope
+             (begin (func-call (id "print") (args (id "a")))
+                    (func-call (id "print") (args (id "b"))))))))))
+    ;; 4
     ("return 1"
      . (return (number 1)))
+    ;; 5
     ("return 1,2"
-     . (return (multi-exps (number 1) (number 2))))    
+     . (return (multi-exps (number 1) (number 2))))
+    ;; 6
     ("return 1,2,3"
      . (return (multi-exps (number 1) (number 2) (number 3))))
+    ;; 7
     ("return 1,2,3,4,5"
-     . (return (multi-exps (number 1) (number 2) (number 3) (number 4) (number 5))))    
+     . (return (multi-exps (number 1) (number 2) (number 3) (number 4) (number 5))))
+    ;; 8
     ("x=1 return x+1"
      . (begin (assign (id "x") (number 1))
               (return (add (id "x") (number 1)))))
+    ;; 9
     ("a=1+2" . (assign (id "a") (add (number 1) (number 2))))
     ))
 
 (define *cond-tests*
-  `(("if true then print(false) end"
+  `(;; 0
+    ("if true then print(false) end"
      . (if (boolean true)
            then
            (scope (func-call (id "print") (args (boolean false))))))
+    ;; 1
     ("if 1 then print(2) elseif 3 then print(4) end"
      . (if (number 1)
            then (scope (func-call (id "print") (args (number 2))))
            elseif (number 3)
            then (scope (func-call (id "print") (args (number 4))))))
+    ;; 2
     ("if 1 then print(2) elseif 3 then print(4) elseif 5 then print(6) end"
      . (if (number 1)
            then (scope (func-call (id "print") (args (number 2))))
@@ -190,7 +214,8 @@
            then (scope (func-call (id "print") (args (number 4))))
            elseif (number 5)
            then (scope (func-call (id "print") (args (number 6))))))
-    ("if 1 then 
+    ;; 3
+    ("if 1 then
          if 11 then
             print(12)
          elseif 12 then
@@ -210,17 +235,19 @@
     ))
 
 (define *func-tests*
-  `(("pairs({x=1,y=2})"
-     . (func-call (id "pairs") 
-                  (args 
+  `(;; 0
+    ("pairs({x=1,y=2})"
+     . (func-call (id "pairs")
+                  (args
                    (table (tb-key-set! (id "x") (number 1))
                           (tb-key-set! (id "y") (number 2))))))
+    ;; 1
     ("function a(x) return 1+x end"
-     . (func-def 
+     . (func-def
         (id "a")
         (params (id "x"))
         (scope (return (add (number 1) (id "x"))))))
-
+    ;; 2
     ("function a(x) return 10,1+x end"
      . (func-def
         (id "a")
@@ -228,20 +255,23 @@
         (scope (return
                 (multi-exps (number 10)
                             (add (number 1) (id "x")))))))
+    ;; 3
     ("function a(x,y) return y+x,1+x end"
      . (func-def
         (id "a")
-        (params (id "x") (id "y"))
+        (params (multi-exps (id "x") (id "y")))
         (scope (return
                 (multi-exps (add (id "y") (id "x"))
                             (add (number 1) (id "x")))))))
+    ;; 4
     ("function a(x,y,z,a,b,c) return y+x,1+x end"
      . (func-def
         (id "a")
-        (params (id "x") (id "y") (id "z") (id "a") (id "b") (id "c"))
+        (params (multi-exps (id "x") (id "y") (id "z") (id "a") (id "b") (id "c")))
         (scope (return
                 (multi-exps (add (id "y") (id "x"))
                             (add (number 1) (id "x")))))))
+    ;; 5
     ("function t.a.b.c:f (x)
         print(self)
         return x
@@ -257,9 +287,10 @@
          (colon-ref (id "f")))
         (params (id "x"))
         (scope
-         (begin 
+         (begin
            (func-call (id "print") (args (id "self")))
            (return (id "x"))))))
+    ;; 6
     ("t.a.b.c.f = function (self, x)
        print(self)
        return x
@@ -275,11 +306,12 @@
         (id "c"))
        (id "f"))
       (anon-func-def
-       (params (id "self") (id "x"))
+       (params (multi-exps (id "self") (id "x")))
        (scope
         (begin
           (func-call (id "print") (args (id "self")))
           (return (id "x")))))))
+    ;; 7
     ("t.a.b.c:f(123)"
      . (func-colon-call
         (namespace
@@ -289,8 +321,9 @@
             (id "t") (id "a"))
            (id "b"))
           (id "c"))
-         (id "f"))
+         (colon-ref (id "f")))
         (args (number 123))))
+    ;; 8
     ("t.a.b.c.f(t,123)"
      . (func-call
         (namespace
@@ -306,7 +339,7 @@
     ))
 
 ;; This is useful to drop `scope' symbol which should exist
-;; in every header of statment.      
+;; in every header of statment.
 (define (get-stat x)
   (match x
     (('scope s1) s1)
@@ -329,8 +362,13 @@
        ((src . expect)
         (let ((r (simplify (call-with-input-string (wrapper src) read-lua))))
           (or (equal? r expect)
-              (error (format #f "~a[~d]: Failed: ~a~%%%%~%~a" name i src (pick-out expect r))))))
-       (else (error (format #f "Invalid case in ~a[~d]" tests-name i) t))))
+              (begin
+                (pick-out expect r)
+                (format #t "~a[~d]: Failed: ~a~%~%~%" name i src)
+                #f))))
+       (else
+        (format #t "Invalid case in ~a[~d]~%~a~%" tests-name i t)
+        #f)))
    tests (iota len))
   (format #t "* testing ~d case~:p...~%" len))
 
@@ -355,4 +393,3 @@
     (test-it "func tests" *func-tests* "*func-tests*" identity get-stat))
 
   )
-

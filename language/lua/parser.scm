@@ -48,15 +48,15 @@
 
     ;; misc
     id sp-id tri-dots
-    
+
     or and lt leq gt geq eq neq
     add minus multi div mod
-    
+
     ;; NOTE: We handled the correct precedence manually in BNF, so we don't need
     ;;       to specify them here.
     ;; according to operations precedence
     ;;(left: or)
-    ;;(left: and) 
+    ;;(left: and)
     ;;(left: lt gt leq geq neq eq)
     (right: concat)
     ;;(left: add minus)
@@ -90,7 +90,7 @@
    ;; the variable is declared).
    (block (scope stat-list scope-rest)
           : (cond
-             ((null? $1) 
+             ((null? $1)
               (if (null? $2)
                   (if (null? $3)
                       '(scope) ; FIXME: is it proper?
@@ -98,7 +98,7 @@
                   (if (null? $3)
                       `(scope ,$2)
                       `(scope (begin ,$2 ,$3)))))
-             ((null? $2) 
+             ((null? $2)
               (if (null? $3)
                   `(scope ,$1)
                   `(scope (begin ,$1 ,$3))))
@@ -123,18 +123,18 @@
    ;;       be produced.
 
    (stat ;; A block can be explicitly delimited to produce a single statement:
-         (loop-stmt do-block)
-         : (match $1
-             (() $2)
-             (('rep r) `(rep (scope (,@r ,$2))))
-             (else `(rep (scope (while ,$1 do ,$2)))))
-         (repeat ublock) : `(rep (scope ,$2))
-         (if conds end) : `(if ,@$2)
-         ;; named function
-         (function func-name func-body) : `(func-def ,$2 ,@$3)
-         (var-list assign exp-list) : `(assign ,$1 ,$3)
-         ;; anonymouse function
-         (func-call) : $1)
+    (loop-stmt do-block)
+    : (match $1
+        (() $2)
+        (('rep r) `(rep (scope (,@r ,$2))))
+        (else `(rep (scope (while ,$1 do ,$2)))))
+    (repeat ublock) : `(rep (scope ,$2))
+    (if conds end) : `(if ,@$2)
+    ;; named function
+    (function func-name func-body) : `(func-def ,$2 ,@$3)
+    (var-list assign exp-list) : `(assign ,$1 ,$3)
+    ;; anonymouse function
+    (func-call) : $1)
 
    (do-block (do block end) : `(do-block ,$2))
 
@@ -190,7 +190,7 @@
                    (else `(,@$1 ,$3))))
 
    (range (exp comma exp range-rest)
-          : (if (null? $4) 
+          : (if (null? $4)
                 `(range ,$1 ,$3)
                 `(range ,$1 ,$3 ,$4)))
 
@@ -201,7 +201,7 @@
               (break) : '(break)
               (continue) : '(continue)
               (return return-stat) : $2)
-   
+
    (return-stat (terminator) : '(return)
                 (exp-list terminator) : `(return ,$1))
 
@@ -214,7 +214,7 @@
 
    (func-name (dotted-name) : $1
               ;; TODO: colon-ref will treat the outter-most namespace as
-              ;;       the implicit first argument, say, self. 
+              ;;       the implicit first argument, say, self.
               (dotted-name colon name) : `(namespace ,$1 (colon-ref ,$3)))
 
    (dotted-name (name) : $1
@@ -222,7 +222,7 @@
 
    (func-call (prefix-exp args) : `(func-call ,$1 ,$2)
               ;; The colon syntax is used for defining methods, that is,
-              ;; functions that have an implicit extra parameter self. 
+              ;; functions that have an implicit extra parameter self.
               ;; Thus, the statement
               ;;    function t.a.b.c:f (params)
               ;;      print(self)
@@ -238,7 +238,7 @@
               ;;    end
               ;; * calling: t.a.b.c.f(t.a.b.c, params)
               ;; NOTE: same way for calling!
-              (prefix-exp colon name args) 
+              (prefix-exp colon name args)
               : `(func-colon-call (namespace ,$1 (colon-ref ,$3)) ,$4)
               )
 
@@ -263,7 +263,7 @@
          ;; If the function has one single argument and this argument is
          ;; either a literal string or a table constructor, then the
          ;; parentheses are optional.
-         ;; e.g 
+         ;; e.g
          ;; print "hello world"
          ;; print {x=10, y=20}
          ;; KNOWN-CONFLICT: This grammar will conflict to `var' in `string'
@@ -285,12 +285,12 @@
              (name-list) : $1
              (tri-dots) : '(tri-dots))
 
-   (name-list (name) : (list $1)
+   (name-list (name) : $1
               (name-lists) : `(multi-exps ,@$1))
 
    (name-lists (name comma name) : (list $1 $3)
                (name-lists comma name) : `(,@$1 ,$3)
-               (name-list comma tri-dots) : `(,@$1 ,$3))
+               (name-list comma tri-dots) : `(,$1 ,$3))
 
    (table-constructor (lbrace rbrace) : '(table)
                       (lbrace field-list rbrace) : `(table ,@$2)
@@ -307,12 +307,12 @@
 
    ;; NOTE:
    ;; Only logic-exp is needed here, for eliminating confilicts.
-   ;; Because LALR can't be reduced from multi terminates. 
+   ;; Because LALR can't be reduced from multi terminates.
    (exp ;;(misc-exp) : $1
-        ;;(arith-exp) : $1
-        ;;(string-exp) : $1
-        (logic-exp) : $1)
-   
+    ;;(arith-exp) : $1
+    ;;(string-exp) : $1
+    (logic-exp) : $1)
+
    ;; Lua Precedence(from higher to lower):
    ;;              ^
    ;;          not  - (unary)
@@ -356,7 +356,7 @@
 
    (misc-exp (not misc-exp (prec: not)) : `(not ,$2)
              (hash misc-exp (prec: hash)) : `(hash ,$2)
-             ;; NOTE: There's no '+number' notation in Lua! 
+             ;; NOTE: There's no '+number' notation in Lua!
              ;;       But there is '-number'.
              (uminus misc-exp (prec: uminus)) : `(uminus ,$2)
              (misc-exp expt misc-val) : `(expt ,$1 ,$3)
