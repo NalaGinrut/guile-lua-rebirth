@@ -1,7 +1,7 @@
 Guile-Lua (rebirth)
 =========
 
-**Because Microsoft has aquired GitHub, as a congrats, I would like to migrate this project to GitLab and this repo will not be maintained on GitHub anymore:
+__Because Microsoft has aquired GitHub, as a congrats, I would like to migrate this project to GitLab and this repo will not be maintained on GitHub anymore:__
 
 https://gitlab.com/NalaGinrut/guile-lua-rebirth
 
